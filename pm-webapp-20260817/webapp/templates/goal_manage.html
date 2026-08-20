@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}管理目标分支 - {{ project.name }}{% endblock %}
+{% block content %}
+
+<div class="page-header branch-manage-header">
+    <div>
+        <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-outline btn-sm back-button">
+            <span aria-hidden="true">←</span><span class="back-button-label">返回项目：{{ project.name }}</span>
+        </a>
+        <h1>管理目标分支</h1>
+        <p class="page-subtitle">目标分支用于把任务节点挂到清晰的项目主线上。</p>
+    </div>
+</div>
+
+<div class="grid-2 branch-manage-layout">
+    <section class="card">
+        <div class="card-header">
+            <div class="card-title">现有目标分支</div>
+            <span class="badge badge-discussing">{{ goals|length }} 个分支</span>
+        </div>
+        {% if goals %}
+        <table class="table branch-table">
+            <thead>
+                <tr>
+                    <th>分支</th>
+                    <th>为什么做</th>
+                    <th>预期产出</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in goals %}
+                <tr>
+                    <td><strong>{{ g.title }}</strong></td>
+                    <td>{{ g.description or '未填写' }}</td>
+                    <td>{{ g.deliverable or '未填写' }}</td>
+                    <td>
+                        <div class="row-actions">
+                            <button type="button" class="btn btn-outline btn-xs" data-edit-branch data-id="{{ g.id }}" data-title="{{ g.title|e }}" data-description="{{ (g.description or '')|e }}" data-deliverable="{{ (g.deliverable or '')|e }}">编辑</button>
+                            <form action="{{ url_for('goal_delete', goal_id=g.id) }}" method="post" data-confirm="删除目标分支「{{ g.title }}」？其下任务将变为未分组。">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-danger btn-xs">删除</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>还没有目标分支</p>
+            <p>先创建一个分支，再把任务节点归入对应方向。</p>
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="card branch-form-card">
+        <div class="card-title" id="form-title">新建目标分支</div>
+        <form id="goal-form" action="{{ url_for('goal_new', project_id=project.id) }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-group">
+                <label for="goal-title">分支名称 *</label>
+                <input type="text" name="title" id="goal-title" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="goal-desc">为什么做</label>
+                <textarea name="description" id="goal-desc" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="goal-deliverable">预期产出</label>
+                <textarea name="deliverable" id="goal-deliverable" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="goal-submit">添加目标分支</button>
+                <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-outline">返回项目</a>
+            </div>
+        </form>
+    </section>
+</div>
+
+<style>
+.page-subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-top: 4px;
+}
+.branch-manage-layout {
+    align-items: start;
+}
+.branch-table td {
+    vertical-align: top;
+}
+.row-actions,
+.form-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.branch-form-card {
+    position: sticky;
+    top: 80px;
+}
+@media (max-width: 768px) {
+    .branch-form-card {
+        position: static;
+    }
+}
+</style>
+
+<script>
+(function () {
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-edit-branch]');
+        if (!button) return;
+        document.getElementById('form-title').textContent = '编辑目标分支';
+        document.getElementById('goal-title').value = button.getAttribute('data-title') || '';
+        document.getElementById('goal-desc').value = button.getAttribute('data-description') || '';
+        document.getElementById('goal-deliverable').value = button.getAttribute('data-deliverable') || '';
+        document.getElementById('goal-form').action = '/goal/' + button.getAttribute('data-id') + '/edit';
+        document.getElementById('goal-submit').textContent = '保存修改';
+        document.getElementById('goal-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+})();
+</script>
+
+{% endblock %}

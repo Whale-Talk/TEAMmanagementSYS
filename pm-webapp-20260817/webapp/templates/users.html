@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}用户管理{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>用户管理</h1>
+        <p class="users-subtitle">维护账号状态、角色和项目人员的项目权限。</p>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="document.getElementById('new-user-form').style.display='block'">新建用户</button>
+</div>
+
+<div class="card user-create-panel" id="new-user-form">
+    <div class="card-header">
+        <span class="card-title">新建用户</span>
+        <button type="button" class="btn btn-outline btn-xs" onclick="document.getElementById('new-user-form').style.display='none'" aria-label="关闭">关闭</button>
+    </div>
+    <form action="{{ url_for('user_create') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="user-form-grid">
+            <div class="form-group compact-form-group">
+                <label for="new-username">用户名</label>
+                <input type="text" name="username" id="new-username" class="form-control" required autocomplete="username">
+            </div>
+            <div class="form-group compact-form-group">
+                <label for="new-display_name">显示名</label>
+                <input type="text" name="display_name" id="new-display_name" class="form-control" required autocomplete="name">
+            </div>
+            <div class="form-group compact-form-group">
+                <label for="new-password">密码</label>
+                <input type="password" name="password" id="new-password" class="form-control" required autocomplete="new-password">
+            </div>
+            <div class="form-group compact-form-group">
+                <label for="new-role">角色</label>
+                <select name="role" id="new-role" class="form-control">
+                    <option value="member">成员</option>
+                    <option value="project_member">项目人员</option>
+                    <option value="admin">管理员</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-success">创建用户</button>
+        </div>
+    </form>
+</div>
+
+<div class="card users-card">
+    <div class="table-scroll" role="region" aria-label="用户列表" tabindex="0">
+        <table class="table users-table">
+            <thead>
+                <tr>
+                    <th>用户</th>
+                    <th>角色</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td>
+                        <div class="user-identity">
+                            <strong>{{ u.display_name }}</strong>
+                            <span>{{ u.username }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="badge-line">
+                            {% if u.role == 'admin' %}
+                            <span class="badge badge-high">管理员</span>
+                            {% elif u.role == 'project_member' %}
+                            <span class="badge badge-medium">项目人员</span>
+                            {% else %}
+                            <span class="badge badge-low">成员</span>
+                            {% endif %}
+                            {% if u.is_super_admin %}<span class="badge badge-urgent">超管</span>{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% if u.is_active %}
+                        <span class="badge badge-resolved">启用</span>
+                        {% else %}
+                        <span class="badge badge-closed">禁用</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if u.is_super_admin and current_user.id != u.id %}
+                        <span class="muted-note">受保护账号，不可修改</span>
+                        {% else %}
+                        <div class="user-actions">
+                            <button
+                                type="button"
+                                class="btn btn-xs btn-outline"
+                                data-edit-user
+                                data-id="{{ u.id }}"
+                                data-username="{{ u.username }}"
+                                data-display="{{ u.display_name }}"
+                                data-role="{{ u.role }}"
+                            >编辑</button>
+                            <form action="{{ url_for('user_role', user_id=u.id) }}" method="post" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <label class="sr-only" for="role-{{ u.id }}">角色</label>
+                                <select name="role" id="role-{{ u.id }}" class="role-select" onchange="this.form.submit()">
+                                    <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>管理员</option>
+                                    <option value="project_member" {% if u.role == 'project_member' %}selected{% endif %}>项目人员</option>
+                                    <option value="member" {% if u.role == 'member' %}selected{% endif %}>成员</option>
+                                </select>
+                            </form>
+                            {% if u.role == 'project_member' %}
+                            <button type="button" class="btn btn-xs btn-outline" onclick="openProjects({{ u.id }})">项目权限</button>
+                            {% endif %}
+                            <form action="{{ url_for('user_toggle', user_id=u.id) }}" method="post" class="inline-form" data-confirm="确定{% if u.is_active %}禁用{% else %}启用{% endif %} {{ u.display_name }}？">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                {% if u.is_active %}
+                                <button type="submit" class="btn btn-xs btn-danger">禁用</button>
+                                {% else %}
+                                <button type="submit" class="btn btn-xs btn-success">启用</button>
+                                {% endif %}
+                            </form>
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="edit-modal" class="users-modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+    <div class="modal">
+        <div class="card-header">
+            <h2 id="edit-modal-title" class="modal-title">编辑用户</h2>
+            <button type="button" class="btn btn-outline btn-xs modal-close" aria-label="关闭">关闭</button>
+        </div>
+        <form id="edit-form" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" id="edit-id">
+            <div class="form-group">
+                <label for="edit-username">用户名</label>
+                <input type="text" name="username" id="edit-username" class="form-control" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="edit-display">显示名</label>
+                <input type="text" name="display_name" id="edit-display" class="form-control" required autocomplete="name">
+            </div>
+            <div class="form-group">
+                <label for="edit-password">重置密码</label>
+                <input type="password" name="password" id="edit-password" class="form-control" autocomplete="new-password">
+                <p class="field-help">留空则不修改密码。</p>
+            </div>
+            <div class="form-group">
+                <label for="edit-role">角色</label>
+                <select name="role" id="edit-role" class="form-control">
+                    <option value="admin">管理员</option>
+                    <option value="project_member">项目人员</option>
+                    <option value="member">成员</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('edit-modal').style.display='none'">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="project-modal" class="users-modal" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
+    <div class="modal project-modal-panel">
+        <div class="card-header">
+            <h2 id="project-modal-title" class="modal-title">分配项目权限</h2>
+            <button type="button" class="btn btn-outline btn-xs" onclick="document.getElementById('project-modal').style.display='none'" aria-label="关闭">关闭</button>
+        </div>
+        <form id="project-form" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" id="project-user-id">
+            <div class="project-check-list">
+                {% for p in projects %}
+                <label class="project-check-row">
+                    <input type="checkbox" name="projects" value="{{ p.id }}" class="project-check">
+                    <span>{{ p.name }}</span>
+                </label>
+                {% else %}
+                <p class="muted-note">暂无进行中的项目。</p>
+                {% endfor %}
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('project-modal').style.display='none'">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.users-subtitle,
+.muted-note,
+.field-help {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.user-create-panel { display: none; }
+.user-form-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+    gap: 12px;
+    align-items: end;
+}
+.compact-form-group { margin-bottom: 0; }
+.users-card { padding: 0; overflow: hidden; }
+.table-scroll { overflow-x: auto; }
+.users-table th,
+.users-table td { vertical-align: middle; }
+.user-identity {
+    display: grid;
+    gap: 2px;
+}
+.user-identity span {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.badge-line,
+.user-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.inline-form { display: inline-flex; }
+.role-select {
+    min-height: 28px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+.users-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(15, 23, 42, 0.5);
+}
+.users-modal .modal { max-height: 86vh; overflow-y: auto; }
+.project-modal-panel { max-width: 480px; }
+.project-check-list {
+    display: grid;
+    gap: 6px;
+    max-height: 320px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+}
+.project-check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+.project-check-row:hover { background: var(--bg-hover); }
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+@media (max-width: 860px) {
+    .user-form-grid { grid-template-columns: 1fr; }
+    .user-form-grid .btn { justify-content: center; }
+    .users-table { min-width: 720px; }
+}
+</style>
+
+<script>
+var userProjects = {{ user_projects_map|tojson if user_projects_map else '{}' }};
+
+function openProjects(userId) {
+    document.getElementById('project-user-id').value = userId;
+    document.getElementById('project-form').action = '/user/' + userId + '/projects';
+    var checked = userProjects[userId] || [];
+    document.querySelectorAll('.project-check').forEach(function(cb) {
+        cb.checked = checked.indexOf(parseInt(cb.value)) !== -1;
+    });
+    document.getElementById('project-modal').style.display = 'flex';
+}
+</script>
+
+{% endblock %}

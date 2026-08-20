@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}执行进度{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>执行进度</h1>
+        <p class="page-kicker">按项目查看当前推进中的任务、责任人和截止风险。</p>
+    </div>
+</div>
+
+{% if progress_data %}
+<div class="project-grid">
+    {% for d in progress_data %}
+    <section class="card project-status-card">
+        <div class="card-header">
+            <div class="stack-tight">
+                <a class="project-status-title" href="{{ url_for('project_view', project_id=d.project.id) }}">
+                    {{ d.project.name }}
+                </a>
+                <div class="muted-meta">
+                    {% if d.project.lead %}负责人：{{ d.project.lead.display_name }}{% else %}暂无项目负责人{% endif %}
+                </div>
+            </div>
+            <form action="{{ url_for('project_toggle_pin', project_id=d.project.id) }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                {% if d.pinned %}
+                <button type="submit" class="btn btn-xs btn-outline" title="取消置顶">已置顶</button>
+                {% else %}
+                <button type="submit" class="btn btn-xs btn-outline">置顶</button>
+                {% endif %}
+            </form>
+        </div>
+
+        <div class="metric-strip">
+            <div class="metric-compact">
+                <strong>{{ d.pct }}%</strong>
+                <span>完成率</span>
+            </div>
+            <div class="metric-compact">
+                <strong>{{ d.in_progress|length }}</strong>
+                <span>进行中</span>
+            </div>
+            <div class="metric-compact">
+                <strong>{{ d.pending|length }}</strong>
+                <span>待进行</span>
+            </div>
+            <div class="metric-compact">
+                <strong>{{ d.completed|length }}/{{ d.total }}</strong>
+                <span>已完成</span>
+            </div>
+        </div>
+
+        {% if d.in_progress %}
+        <div class="task-row-list">
+            {% for t in d.in_progress %}
+            {% set days_left = (t.due_date - today).days if t.due_date else none %}
+            <a class="list-row task-row-link" href="{{ url_for('task_view', task_id=t.id) }}">
+                <span class="status-dot status-dot-warning" aria-hidden="true"></span>
+                <span class="task-row-main">
+                    <strong>{{ t.title }}</strong>
+                    <span>{{ t.project.name }}</span>
+                </span>
+                <span class="task-row-meta">
+                    {% if t.assignee %}负责：{{ t.assignee.display_name }}{% else %}无人负责{% endif %}
+                </span>
+                <span class="task-row-meta">
+                    {% if t.reviewer %}验收：{{ t.reviewer.display_name }}{% else %}无人验收{% endif %}
+                </span>
+                {% if t.due_date %}
+                <span class="due-chip {% if days_left < 0 %}overdue{% elif days_left <= 1 %}soon{% elif days_left <= 3 %}near{% else %}ok{% endif %}">
+                    {{ t.due_date.strftime('%m/%d') }}
+                    {% if days_left < 0 %}逾期{{ -days_left }}天{% elif days_left == 0 %}今天到期{% else %}剩{{ days_left }}天{% endif %}
+                </span>
+                {% else %}
+                <span class="due-chip ok">暂无日期</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state empty-state-compact">
+            <p>当前无进行中任务</p>
+        </div>
+        {% endif %}
+    </section>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>没有进行中的项目</p>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}风险与卡点{% endblock %}
+{% block content %}
+
+{% macro risk_task_row(t, label, badge_class, extra='') %}
+<a class="list-row task-row-link" href="{{ url_for('task_view', task_id=t.id) }}">
+    <span class="badge {{ badge_class }}">{{ label }}</span>
+    <span class="task-row-main">
+        <strong>{{ t.title }}</strong>
+        <span>{{ t.project.name }}</span>
+    </span>
+    <span class="task-row-meta">
+        {% if t.assignee %}负责：{{ t.assignee.display_name }}{% else %}无人负责{% endif %}
+    </span>
+    <span class="task-row-meta">
+        {% if t.reviewer %}验收：{{ t.reviewer.display_name }}{% else %}无人验收{% endif %}
+    </span>
+    {% if extra %}<span class="task-row-meta task-row-extra">{{ extra }}</span>{% endif %}
+    <span class="badge badge-{{ 'resolved' if t.status=='completed' else ('in-progress' if t.status=='in_progress' else 'pending') }}">
+        {{ t.status_label() }}
+    </span>
+</a>
+{% endmacro %}
+
+{% set due_soon = due_tasks|selectattr('due_date', 'ge', today)|list %}
+
+<div class="page-header">
+    <div>
+        <h1>风险与卡点</h1>
+        <p class="page-kicker">按处置优先级排列：先处理逾期，再处理临期和责任缺口。</p>
+    </div>
+</div>
+
+<div class="metric-strip risk-summary">
+    <div class="metric-compact">
+        <strong>{{ overdue|length }}</strong>
+        <span>逾期</span>
+    </div>
+    <div class="metric-compact">
+        <strong>{{ due_soon|length }}</strong>
+        <span>临期</span>
+    </div>
+    <div class="metric-compact">
+        <strong>{{ stale_tasks|length }}</strong>
+        <span>停滞</span>
+    </div>
+    <div class="metric-compact">
+        <strong>{{ unassigned|length }}</strong>
+        <span>无人负责</span>
+    </div>
+    <div class="metric-compact">
+        <strong>{{ unreviewed|length }}</strong>
+        <span>无人验收</span>
+    </div>
+</div>
+
+<section class="card risk-section risk-section-critical">
+    <div class="card-header">
+        <div class="stack-tight">
+            <span class="card-title">1. 逾期任务</span>
+            <span class="muted-meta">已超过截止日期，优先确认负责人、交付范围和新的完成时间。</span>
+        </div>
+        <span class="badge badge-overdue">{{ overdue|length }} 项</span>
+    </div>
+    {% if overdue %}
+    <div class="task-row-list">
+        {% for t in overdue %}
+        {{ risk_task_row(t, '逾期' ~ t.days_overdue() ~ '天', 'badge-overdue', '截止：' ~ t.due_date.strftime('%m/%d')) }}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state empty-state-compact"><p>没有逾期任务</p></div>
+    {% endif %}
+</section>
+
+<section class="card risk-section">
+    <div class="card-header">
+        <div class="stack-tight">
+            <span class="card-title">2. 临期任务</span>
+            <span class="muted-meta">未来 3 天内到期，适合在例会上提前确认交付状态。</span>
+        </div>
+        <span class="badge badge-medium">{{ due_soon|length }} 项</span>
+    </div>
+    {% if due_soon %}
+    <div class="task-row-list">
+        {% for t in due_soon %}
+        {% set days_left = (t.due_date - today).days %}
+        {% set due_text = '今天到期' if days_left == 0 else ('剩' ~ days_left ~ '天') %}
+        {{ risk_task_row(t, due_text, 'badge-medium', '截止：' ~ t.due_date.strftime('%m/%d')) }}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state empty-state-compact"><p>没有临期任务</p></div>
+    {% endif %}
+</section>
+
+<section class="card risk-section">
+    <div class="card-header">
+        <div class="stack-tight">
+            <span class="card-title">3. 停滞任务</span>
+            <span class="muted-meta">超过 3 天没有推进记录或状态变化，需要补充进展或调整计划。</span>
+        </div>
+        <span class="badge badge-closed">{{ stale_tasks|length }} 项</span>
+    </div>
+    {% if stale_tasks %}
+    <div class="task-row-list">
+        {% for t in stale_tasks %}
+        {% set extra = '最近推进：' ~ (t.last_progress_at|localdt_short if t.last_progress_at else '暂无记录') %}
+        {{ risk_task_row(t, '停滞', 'badge-closed', extra) }}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state empty-state-compact"><p>没有停滞任务</p></div>
+    {% endif %}
+</section>
+
+<div class="grid-2">
+    <section class="card risk-section">
+        <div class="card-header">
+            <div class="stack-tight">
+                <span class="card-title">4. 无人负责</span>
+                <span class="muted-meta">需要先指定任务负责人。</span>
+            </div>
+            <span class="badge badge-high">{{ unassigned|length }} 项</span>
+        </div>
+        {% if unassigned %}
+        <div class="task-row-list">
+            {% for t in unassigned %}
+            {% set submitter = '提交：' ~ (t.submitter.display_name if t.submitter else '未知') %}
+            {{ risk_task_row(t, '待分配', 'badge-high', submitter) }}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state empty-state-compact"><p>所有任务都有负责人</p></div>
+        {% endif %}
+    </section>
+
+    <section class="card risk-section">
+        <div class="card-header">
+            <div class="stack-tight">
+                <span class="card-title">5. 无人验收</span>
+                <span class="muted-meta">需要补齐验收人，避免完成后无法闭环。</span>
+            </div>
+            <span class="badge badge-discussing">{{ unreviewed|length }} 项</span>
+        </div>
+        {% if unreviewed %}
+        <div class="task-row-list">
+            {% for t in unreviewed %}
+            {{ risk_task_row(t, '待验收人', 'badge-discussing') }}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state empty-state-compact"><p>所有任务都有验收人</p></div>
+        {% endif %}
+    </section>
+</div>
+
+{% endblock %}

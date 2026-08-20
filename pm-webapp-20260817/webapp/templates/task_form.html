@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}{% if task %}编辑任务{% else %}新建任务{% endif %}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-outline btn-sm back-button">
+            <span aria-hidden="true">←</span><span class="back-button-label">返回项目：{{ project.name }}</span>
+        </a>
+        <h1>{% if task %}编辑任务{% else %}新建任务{% endif %}</h1>
+        <p class="page-subtitle">{% if task %}先维护任务事实；方案、进展和日志按需展开。{% else %}先明确任务、负责人和截止日期，后续可在详情页补充方案和进展。{% endif %}</p>
+    </div>
+    <div class="task-page-actions">
+        {% if task %}
+        <a href="{{ url_for('task_view', task_id=task.id) }}" class="btn btn-outline btn-sm">查看详情</a>
+        <form action="{{ url_for('task_delete', task_id=task.id) }}" method="post" data-confirm="确定删除此任务？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-danger btn-sm">删除</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="task-edit-grid task-form-layout">
+    <main class="card task-form-card">
+        {% if task %}
+        <div class="card-header">
+            <div class="card-title">{{ task.title }}</div>
+            <span class="badge badge-{{ 'resolved' if task.status=='completed' else ('in-progress' if task.status=='in_progress' else 'pending') }}">{{ task.status_label() }}</span>
+        </div>
+        {% else %}
+        <div class="card-title">任务信息</div>
+        {% endif %}
+
+        <form method="post" class="task-main-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <section class="form-section">
+                <div class="form-group">
+                    <label for="title">任务标题 *</label>
+                    <input type="text" name="title" id="title" class="form-control" value="{{ task.title if task else '' }}" required autofocus>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="assignee_id">负责人</label>
+                        <select name="assignee_id" id="assignee_id" class="form-control">
+                            <option value="">-- 暂不指定 --</option>
+                            {% if users is defined %}
+                            {% for u in users %}
+                            <option value="{{ u.id }}" {% if task and task.assignee_id == u.id %}selected{% endif %}>{{ u.display_name }}</option>
+                            {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="due_date">截止日期</label>
+                        <input type="date" name="due_date" id="due_date" class="form-control" value="{{ task.due_date.strftime('%Y-%m-%d') if task and task.due_date else '' }}">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="status">状态</label>
+                        <select name="status" id="status" class="form-control">
+                            <option value="pending" {% if not task or task.status == 'pending' %}selected{% endif %}>待进行</option>
+                            <option value="in_progress" {% if task and task.status == 'in_progress' %}selected{% endif %}>进行中</option>
+                            <option value="completed" {% if task and task.status == 'completed' %}selected{% endif %}>已完成</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="reviewer_id">验收人</label>
+                        <select name="reviewer_id" id="reviewer_id" class="form-control">
+                            <option value="">-- 暂不指定 --</option>
+                            {% if users is defined %}
+                            {% for u in users %}
+                            <option value="{{ u.id }}" {% if task and task.reviewer_id == u.id %}selected{% endif %}>{{ u.display_name }}</option>
+                            {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <section class="form-section">
+                <div class="form-group">
+                    <label for="description">为什么做（背景/目的）</label>
+                    <textarea name="description" id="description" class="form-control" rows="3">{{ task.description if task else '' }}</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="deliverable">预期产出什么</label>
+                    <textarea name="deliverable" id="deliverable" class="form-control" rows="3">{{ task.deliverable if task else '' }}</textarea>
+                </div>
+            </section>
+
+            <details class="progressive-panel" {% if not task %}open{% endif %}>
+                <summary>分组与成员</summary>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="goal_id">目标分支</label>
+                        <select name="goal_id" id="goal_id" class="form-control">
+                            <option value="">-- 未分组 --</option>
+                            {% if goals is defined %}
+                            {% for g in goals %}
+                            <option value="{{ g.id }}" {% if task and task.goal_id == g.id %}selected{% endif %}>{{ g.title }}</option>
+                            {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>成员（可多选）</label>
+                        <div class="member-picker">
+                            {% if users is defined %}
+                            {% for u in users %}
+                            <label class="member-option">
+                                <input type="checkbox" name="members" value="{{ u.id }}" {% if task and u in task.members %}checked{% endif %}>
+                                <span>{{ u.display_name }}</span>
+                            </label>
+                            {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">{% if task %}保存任务{% else %}创建任务{% endif %}</button>
+                <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-outline">返回项目</a>
+            </div>
+        </form>
+    </main>
+
+    {% if task %}
+    <aside class="task-form-side">
+        <section class="card">
+            <div class="card-title">方案</div>
+            {% if task.solution %}
+            <div class="solution-box">
+                <p>{{ task.solution }}</p>
+            </div>
+            {% endif %}
+            <details class="progressive-panel" {% if not task.solution %}open{% endif %}>
+                <summary>{% if task.solution %}更新方案{% else %}填写方案{% endif %}</summary>
+                <form action="{{ url_for('task_solution', task_id=task.id) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <textarea name="solution" class="form-control" rows="4" placeholder="填写方案、关键路径或验收口径">{{ task.solution or '' }}</textarea>
+                    <button type="submit" class="btn btn-success btn-sm">保存方案</button>
+                </form>
+            </details>
+        </section>
+
+        <section class="card">
+            <div class="card-title">记录进展</div>
+            <form action="{{ url_for('task_progress', task_id=task.id) }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <textarea name="content" class="form-control" rows="3" placeholder="记录本次推进、阻塞或下一步" required></textarea>
+                <button type="submit" class="btn btn-primary btn-sm">记录进展</button>
+                {% if task.last_progress_at %}
+                <p class="form-hint">上次推进：{{ task.last_progress_at|localdt_short }}</p>
+                {% endif %}
+            </form>
+
+            {% if task.progress_logs %}
+            <details class="progressive-panel">
+                <summary>查看最近进展</summary>
+                <div class="timeline-list">
+                    {% for pl in task.progress_logs[:10] %}
+                    <div class="list-row">
+                        <div>
+                            <strong>{{ pl.user.display_name }}</strong>
+                            <span>{{ pl.created_at|localdt_short }}</span>
+                        </div>
+                        <p>{{ pl.content }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+        </section>
+
+        {% if logs %}
+        <section class="card">
+            <details class="progressive-panel">
+                <summary>操作记录</summary>
+                {% for log in logs %}
+                <div class="list-row">
+                    <span>{{ log.created_at|localdt }}</span>
+                    <span>{{ log.actor.display_name if log.actor else '系统' }}</span>
+                    <span>{{ log.action }}{% if log.detail %}: {{ log.detail }}{% endif %}</span>
+                </div>
+                {% endfor %}
+            </details>
+        </section>
+        {% endif %}
+    </aside>
+    {% endif %}
+</div>
+
+{% endblock %}

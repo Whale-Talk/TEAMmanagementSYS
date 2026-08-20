@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{% if project %}编辑项目{% else %}新建项目{% endif %}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <a href="{% if project %}{{ url_for('project_view', project_id=project.id) }}{% else %}{{ url_for('index') }}{% endif %}" class="btn btn-outline btn-sm back-button">
+            <span aria-hidden="true">←</span><span class="back-button-label">{% if project %}返回项目详情{% else %}返回项目空间{% endif %}</span>
+        </a>
+        <h1>{% if project %}编辑项目{% else %}新建项目{% endif %}</h1>
+        <p class="page-subtitle">先定义项目主线，再在详情页拆成目标分支和任务节点。</p>
+    </div>
+</div>
+
+<div class="card project-form-card">
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <section class="form-section">
+            <div>
+                <h2>项目主线</h2>
+                <p>面向所有成员展示项目为什么存在，以及最后要交付什么。</p>
+            </div>
+            <div>
+                <div class="form-group">
+                    <label for="name">项目名称 *</label>
+                    <input type="text" name="name" id="name" class="form-control" value="{{ project.name if project else '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="description">为什么做</label>
+                    <textarea name="description" id="description" class="form-control" rows="4">{{ project.description if project else '' }}</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="deliverable">预期产出</label>
+                    <textarea name="deliverable" id="deliverable" class="form-control" rows="3">{{ project.deliverable if project else '' }}</textarea>
+                </div>
+            </div>
+        </section>
+
+        <section class="form-section">
+            <div>
+                <h2>责任与状态</h2>
+                <p>负责人用于项目识别；实际管理权限仍按系统权限配置判断。</p>
+            </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="start_date">开始时间</label>
+                    <input type="date" name="start_date" id="start_date" class="form-control" value="{{ project.start_date.strftime('%Y-%m-%d') if project and project.start_date else '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="lead_id">项目负责人</label>
+                    <select name="lead_id" id="lead_id" class="form-control">
+                        <option value="">暂不指定</option>
+                        {% for u in users %}
+                        <option value="{{ u.id }}" {% if project and project.lead_id == u.id %}selected{% endif %}>
+                            {{ u.display_name }} ({{ u.username }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if project %}
+                <div class="form-group">
+                    <label for="status">项目状态</label>
+                    <select name="status" id="status" class="form-control">
+                        <option value="active" {% if project.status == 'active' %}selected{% endif %}>进行中</option>
+                        <option value="completed" {% if project.status == 'completed' %}selected{% endif %}>已完成</option>
+                        <option value="archived" {% if project.status == 'archived' %}selected{% endif %}>归档</option>
+                    </select>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{% if project %}保存项目{% else %}创建项目{% endif %}</button>
+            <a href="{% if project %}{{ url_for('project_view', project_id=project.id) }}{% else %}{{ url_for('index') }}{% endif %}" class="btn btn-outline">取消</a>
+        </div>
+    </form>
+</div>
+
+<style>
+.page-subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-top: 4px;
+}
+.project-form-card {
+    max-width: 960px;
+}
+.form-section {
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    gap: 24px;
+    grid-template-columns: 220px minmax(0, 1fr);
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+}
+.form-section h2 {
+    font-size: 17px;
+    margin-bottom: 6px;
+}
+.form-section p {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+}
+.form-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+@media (max-width: 768px) {
+    .form-section {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}日历{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>日历</h1>
+        <p class="page-kicker">按日期查看开始、截止和完成记录，选中日期后查看完整明细。</p>
+    </div>
+</div>
+
+<div class="calendar-toolbar card">
+    <div class="calendar-nav">
+        <a class="btn btn-outline btn-sm" href="{{ url_for('calendar', month=prev_month, user_id=user_id) }}">‹ 上月</a>
+        <span class="calendar-month-title">{{ year }} 年 {{ mon }} 月</span>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('calendar', month=next_month, user_id=user_id) }}">下月 ›</a>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('calendar', user_id=user_id) }}">今天</a>
+    </div>
+    <div class="toolbar-field">
+        <label for="cal-user">查看人员</label>
+        <select id="cal-user" class="form-control"
+                onchange="location.href='{{ url_for('calendar') }}?month={{ month_year }}&user_id=' + this.value + '&day={{ sel_day }}'">
+            <option value="" {% if default_view %}selected{% endif %}>我的工作</option>
+            <option value="all" {% if not default_view and not sel_user %}selected{% endif %}>全部人员</option>
+            {% for u in users %}
+            <option value="{{ u.id }}" {% if sel_user and sel_user.id == u.id %}selected{% endif %}>{{ u.display_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+
+<div class="calendar-legend" aria-label="日历类型图例">
+    <span><span class="cal-legend cal-legend-start"></span>开始</span>
+    <span><span class="cal-legend cal-legend-due"></span>截止</span>
+    <span><span class="cal-legend cal-legend-overdue"></span>已逾期</span>
+    <span><span class="cal-legend cal-legend-done"></span>完成</span>
+</div>
+
+<div class="calendar-grid" role="grid" aria-label="{{ year }} 年 {{ mon }} 月日历">
+    {% for wd in weekday_names %}
+    <div class="calendar-weekday" role="columnheader">{{ wd }}</div>
+    {% endfor %}
+
+    {% for week in grid %}
+        {% for cell in week %}
+        <div class="calendar-cell
+            {% if not cell.in_month %}outside{% endif %}
+            {% if cell.is_today %}today{% endif %}
+            {% if cell.date == sel_day and cell.in_month %}selected{% endif %}"
+            role="gridcell" data-date="{{ cell.date.isoformat() }}">
+            <a class="cal-day-num"
+               href="{{ url_for('calendar', month=month_year, user_id=user_id, day=cell.date.isoformat()) }}"
+               aria-label="查看 {{ cell.date.isoformat() }} 明细">{{ cell.date.day }}</a>
+            {% for item in cell['items'][:4] %}
+            {% if item.url %}
+            <a class="cal-item cal-item-{{ item.type }}" href="{{ item.url }}" title="{{ item.label }}：{{ item.title }}">
+                <span class="cal-item-label">{{ item.label }}</span>
+                <span class="cal-item-title">{{ item.title[:16] }}</span>
+            </a>
+            {% else %}
+            <span class="cal-item cal-item-log" title="{{ item.label }}：{{ item.title }}">
+                <span class="cal-item-label">{{ item.label }}</span>
+                <span class="cal-item-title">{{ item.title[:16] }}</span>
+            </span>
+            {% endif %}
+            {% endfor %}
+            {% if cell['items']|length > 4 %}
+            <a class="cal-item-more" href="{{ url_for('calendar', month=month_year, user_id=user_id, day=cell.date.isoformat()) }}">
+                +{{ cell['items']|length - 4 }} 项
+            </a>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% endfor %}
+</div>
+
+<section class="card cal-detail-list">
+    <div class="card-header">
+        <div class="stack-tight">
+            <h2>{{ sel_day.strftime('%Y-%m-%d') }} 工作明细</h2>
+            <span class="muted-meta">
+                {% if default_view %}我的工作{% elif sel_user %}{{ sel_user.display_name }}{% else %}全部人员{% endif %}
+            </span>
+        </div>
+        <span class="badge badge-{{ 'medium' if sel_items else 'closed' }}">{{ sel_items|length }} 项</span>
+    </div>
+    {% if sel_items %}
+    <div class="task-row-list">
+        {% for it in sel_items %}
+        {% set badge_class = 'badge-overdue' if it.badge == 'overdue' else ('badge-resolved' if it.type == 'done' else ('badge-in-progress' if it.type == 'start' else 'badge-medium')) %}
+        <div class="cal-detail-item">
+            <span class="badge {{ badge_class }}">{{ it.label }}</span>
+            {% if it.url %}
+            <a class="task-row-main" href="{{ it.url }}">
+                <strong>{{ it.title }}</strong>
+            </a>
+            {% else %}
+            <span class="task-row-main">
+                <strong>{{ it.title }}</strong>
+            </span>
+            {% endif %}
+            {% if it.person %}<span class="cal-detail-person">负责人：{{ it.person }}</span>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state empty-state-compact">
+        <p>这一天没有任务</p>
+    </div>
+    {% endif %}
+</section>
+
+{% endblock %}

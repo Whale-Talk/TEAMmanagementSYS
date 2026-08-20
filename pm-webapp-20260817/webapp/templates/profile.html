@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}个人资料{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>个人资料</h1>
+        <p class="page-subtitle">维护登录身份和显示名称；需要改密时填写密码区域。</p>
+    </div>
+</div>
+
+<div class="card profile-card">
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <section class="profile-section" aria-labelledby="account-title">
+            <h2 id="account-title" class="section-title">账号信息</h2>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" name="username" id="username" class="form-control" value="{{ current_user.username }}" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="display_name">显示名</label>
+                    <input type="text" name="display_name" id="display_name" class="form-control" value="{{ current_user.display_name }}" required autocomplete="name">
+                </div>
+            </div>
+        </section>
+
+        <section class="profile-section" aria-labelledby="password-title">
+            <h2 id="password-title" class="section-title">修改密码</h2>
+            <p class="section-help">不修改密码时，下面两项保持为空。</p>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="old_password">原密码</label>
+                    <input type="password" name="old_password" id="old_password" class="form-control" autocomplete="current-password">
+                </div>
+                <div class="form-group">
+                    <label for="new_password">新密码</label>
+                    <input type="password" name="new_password" id="new_password" class="form-control" autocomplete="new-password">
+                </div>
+            </div>
+        </section>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">保存资料</button>
+        </div>
+    </form>
+</div>
+
+<style>
+.page-subtitle,
+.section-help {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+.profile-card { max-width: 760px; }
+.profile-section {
+    padding-bottom: 18px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+}
+.profile-section:last-of-type { margin-bottom: 0; }
+.section-title {
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+.section-help { margin-bottom: 14px; }
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+</style>
+{% endblock %}

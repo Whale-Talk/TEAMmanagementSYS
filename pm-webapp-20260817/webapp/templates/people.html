@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}人员负载{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>人员负载</h1>
+        <p class="page-kicker">查看每个人当前负责、待启动和参与的任务。</p>
+    </div>
+</div>
+
+{% if people_data %}
+<div class="project-grid">
+    {% for d in people_data %}
+    {% set active_count = d.in_progress|length %}
+    {% set pending_count = d.pending|length %}
+    {% set member_count = d.member_tasks|length %}
+    {% set workload = active_count + pending_count + member_count %}
+    <section class="card people-load-card">
+        <div class="card-header">
+            <div class="stack-tight">
+                <span class="card-title">{{ d.user.display_name }}</span>
+                <span class="muted-meta">
+                    {{ '管理员' if d.user.role == 'admin' else ('项目人员' if d.user.role == 'project_member' else '成员') }}
+                </span>
+            </div>
+            <span class="badge badge-{{ 'high' if workload >= 8 else ('medium' if workload >= 4 else 'low') }}">
+                {{ workload }} 项任务
+            </span>
+        </div>
+
+        <div class="metric-strip">
+            <div class="metric-compact">
+                <strong>{{ active_count }}</strong>
+                <span>负责中</span>
+            </div>
+            <div class="metric-compact">
+                <strong>{{ pending_count }}</strong>
+                <span>待启动</span>
+            </div>
+            <div class="metric-compact">
+                <strong>{{ member_count }}</strong>
+                <span>参与中</span>
+            </div>
+        </div>
+
+        {% if d.in_progress %}
+        <div class="section-subhead">负责中的任务</div>
+        <div class="task-row-list">
+            {% for t in d.in_progress %}
+            {% set days_left = (t.due_date - today).days if t.due_date else none %}
+            <a class="list-row task-row-link" href="{{ url_for('task_view', task_id=t.id) }}">
+                <span class="badge badge-in-progress">负责</span>
+                <span class="task-row-main">
+                    <strong>{{ t.title }}</strong>
+                    <span>{{ t.project.name }}</span>
+                </span>
+                {% if t.due_date %}
+                <span class="due-chip {% if days_left < 0 %}overdue{% elif days_left <= 3 %}soon{% else %}ok{% endif %}">
+                    {{ t.due_date.strftime('%m/%d') }}{% if days_left < 0 %} 逾期{{ -days_left }}天{% elif days_left == 0 %} 今天到期{% endif %}
+                </span>
+                {% else %}
+                <span class="due-chip ok">暂无日期</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if d.pending %}
+        <details class="task-collapse">
+            <summary>待启动任务（{{ pending_count }}）</summary>
+            <div class="task-row-list">
+                {% for t in d.pending %}
+                {% set days_left = (t.due_date - today).days if t.due_date else none %}
+                <a class="list-row task-row-link" href="{{ url_for('task_view', task_id=t.id) }}">
+                    <span class="badge badge-pending">待进行</span>
+                    <span class="task-row-main">
+                        <strong>{{ t.title }}</strong>
+                        <span>{{ t.project.name }}</span>
+                    </span>
+                    {% if t.due_date %}
+                    <span class="due-chip {% if days_left < 0 %}overdue{% elif days_left <= 3 %}soon{% else %}ok{% endif %}">
+                        {{ t.due_date.strftime('%m/%d') }}
+                    </span>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+
+        {% if d.member_tasks %}
+        <details class="task-collapse">
+            <summary>参与中的任务（{{ member_count }}）</summary>
+            <div class="task-row-list">
+                {% for t in d.member_tasks %}
+                <a class="list-row task-row-link" href="{{ url_for('task_view', task_id=t.id) }}">
+                    <span class="badge badge-medium">参与</span>
+                    <span class="task-row-main">
+                        <strong>{{ t.title }}</strong>
+                        <span>{{ t.project.name }}</span>
+                    </span>
+                    {% if t.assignee %}<span class="task-row-meta">负责：{{ t.assignee.display_name }}</span>{% endif %}
+                </a>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+
+        {% if workload == 0 %}
+        <div class="empty-state empty-state-compact">
+            <p>暂无任务</p>
+        </div>
+        {% endif %}
+    </section>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>暂无人员</p>
+</div>
+{% endif %}
+
+{% endblock %}

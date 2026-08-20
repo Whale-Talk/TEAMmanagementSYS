@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block content %}
+
+{% set completed_count = tasks|selectattr('status','equalto','completed')|list|length %}
+{% set open_count = tasks|length - completed_count %}
+{% set unassigned_count = tasks|selectattr('assignee_id','none')|list|length %}
+{% set risk = namespace(overdue=0) %}
+{% for t in tasks %}
+    {% if t.is_overdue() %}
+        {% set risk.overdue = risk.overdue + 1 %}
+    {% endif %}
+{% endfor %}
+
+<div class="page-header project-detail-header">
+    <div>
+        <a href="{{ url_for('index') }}" class="btn btn-outline btn-sm back-button">
+            <span aria-hidden="true">←</span><span class="back-button-label">返回项目空间</span>
+        </a>
+        <h1>{{ project.name }}</h1>
+    </div>
+    <div class="project-detail-actions">
+        <a href="{{ url_for('task_new', project_id=project.id) }}" class="btn btn-primary btn-sm">新建任务</a>
+        {% if current_user.can_manage_project(project) %}
+        <a href="{{ url_for('project_edit', project_id=project.id) }}" class="btn btn-outline btn-sm">编辑项目</a>
+        <a href="{{ url_for('goal_manage', project_id=project.id) }}" class="btn btn-outline btn-sm">管理目标分支</a>
+        {% endif %}
+    </div>
+</div>
+
+<section class="card project-mainline" aria-labelledby="project-mainline-title">
+    <div class="card-header">
+        <div>
+            <div class="eyebrow">项目主线</div>
+            <h2 id="project-mainline-title" class="section-title">{{ project.name }}</h2>
+        </div>
+        <span class="badge badge-{{ 'resolved' if project.status == 'completed' else ('closed' if project.status == 'archived' else 'in-progress') }}">
+            {% if project.status == 'completed' %}已完成{% elif project.status == 'archived' %}已归档{% else %}进行中{% endif %}
+        </span>
+    </div>
+
+    <div class="project-brief-grid">
+        <div>
+            <strong>为什么做</strong>
+            <p>{{ project.description or '未填写项目背景。' }}</p>
+        </div>
+        <div>
+            <strong>预期产出</strong>
+            <p>{{ project.deliverable or '未填写预期产出。' }}</p>
+        </div>
+        <div>
+            <strong>负责人</strong>
+            <p>{{ project.lead.display_name if project.lead else '未指定' }}</p>
+        </div>
+        <div>
+            <strong>开始时间</strong>
+            <p>{{ project.start_date.strftime('%Y-%m-%d') if project.start_date else '未指定' }}</p>
+        </div>
+    </div>
+
+    <div class="project-health-row" aria-label="项目关键指标">
+        <div><strong>{{ project.progress_pct() }}%</strong><span>整体进度</span></div>
+        <div><strong>{{ open_count }}</strong><span>未完成任务</span></div>
+        <div><strong>{{ completed_count }}</strong><span>已完成任务</span></div>
+        <div><strong>{{ risk.overdue }}</strong><span>逾期任务</span></div>
+        <div><strong>{{ unassigned_count }}</strong><span>无人负责</span></div>
+    </div>
+</section>
+
+{% if current_user.is_admin() %}
+<details class="admin-danger-zone">
+    <summary>项目管理</summary>
+    <form action="{{ url_for('project_delete', project_id=project.id) }}" method="post" data-confirm="确定删除整个项目？所有任务将被永久删除！">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-danger btn-sm">删除项目</button>
+    </form>
+</details>
+{% endif %}
+
+{% macro task_node(t) %}
+<article class="task-tree-node {% if t.is_overdue() %}task-tree-node-risk{% endif %}">
+    <div class="task-node-status">
+        {% if current_user.can_manage_project(t.project) or current_user.id == t.assignee_id %}
+        <form action="{{ url_for('task_quick_status', task_id=t.id) }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="sr-only" for="task-status-{{ t.id }}">任务状态</label>
+            <select id="task-status-{{ t.id }}" name="status" class="form-control task-status-select" data-autosubmit>
+                <option value="pending" {% if t.status == 'pending' %}selected{% endif %}>待进行</option>
+                <option value="in_progress" {% if t.status == 'in_progress' %}selected{% endif %}>进行中</option>
+                <option value="completed" {% if t.status == 'completed' %}selected{% endif %}>已完成</option>
+            </select>
+        </form>
+        {% else %}
+        <span class="badge badge-{{ 'resolved' if t.status == 'completed' else ('in-progress' if t.status == 'in_progress' else 'pending') }}">{{ t.status_label() }}</span>
+        {% endif %}
+    </div>
+
+    <div class="task-node-body">
+        <a href="{{ url_for('task_view', task_id=t.id) }}" class="task-node-title {% if t.status == 'completed' %}task-node-title-done{% endif %}">{{ t.title }}</a>
+        <div class="task-node-meta">
+            {% if t.assignee %}<span>负责人：{{ t.assignee.display_name }}</span>{% else %}<span>负责人：未指定</span>{% endif %}
+            {% if t.reviewer %}<span>验收人：{{ t.reviewer.display_name }}</span>{% endif %}
+            {% if t.members.count() > 0 %}<span>参与：{{ t.members.count() }} 人</span>{% endif %}
+            {% if stale_task_ids is defined and t.id in stale_task_ids %}<span class="badge badge-overdue">超过 3 天未推进</span>{% endif %}
+            {% if t.due_date %}
+            {% set days_left = (t.due_date - today).days %}
+            <span class="due-chip {% if days_left < 0 %}overdue{% elif days_left <= 1 %}soon{% elif days_left <= 3 %}near{% else %}ok{% endif %}">
+                {{ t.due_date.strftime('%m/%d') }}
+                {% if days_left < 0 %}逾期 {{ -days_left }} 天{% elif days_left == 0 %}今天到期{% elif days_left == 1 %}明天到期{% else %}还剩 {{ days_left }} 天{% endif %}
+            </span>
+            {% endif %}
+        </div>
+    </div>
+</article>
+{% endmacro %}
+
+<section class="branch-tree" aria-label="项目树">
+    <div class="tree-root">
+        <span class="tree-node-dot"></span>
+        <div>
+            <div class="eyebrow">项目主线</div>
+            <strong>{{ project.name }}</strong>
+        </div>
+    </div>
+
+    {% if tasks %}
+        {% for g in goals %}
+            {% if g.id in tasks_by_goal %}
+            {% set branch_tasks = tasks_by_goal[g.id] %}
+            {% set in_progress_tasks = branch_tasks|selectattr('status','equalto','in_progress')|list %}
+            {% set pending_tasks = branch_tasks|selectattr('status','equalto','pending')|list %}
+            {% set completed_tasks = branch_tasks|selectattr('status','equalto','completed')|list %}
+            <section class="branch-group">
+                <div class="branch-header">
+                    <span class="tree-node-dot"></span>
+                    <div>
+                        <div class="eyebrow">目标分支</div>
+                        <h2>{{ g.title }}</h2>
+                        {% if g.description or g.deliverable %}
+                        <p>
+                            {% if g.description %}{{ g.description }}{% endif %}
+                            {% if g.description and g.deliverable %} / {% endif %}
+                            {% if g.deliverable %}产出：{{ g.deliverable }}{% endif %}
+                        </p>
+                        {% endif %}
+                    </div>
+                    <span class="badge badge-discussing">{{ branch_tasks|length }} 个任务节点</span>
+                </div>
+
+                <div class="task-node-list">
+                    {% for t in in_progress_tasks %}
+                    {{ task_node(t) }}
+                    {% endfor %}
+
+                    {% if pending_tasks %}
+                    <details class="task-status-group">
+                        <summary>待进行 {{ pending_tasks|length }}</summary>
+                        {% for t in pending_tasks %}{{ task_node(t) }}{% endfor %}
+                    </details>
+                    {% endif %}
+
+                    {% if completed_tasks %}
+                    <details class="task-status-group">
+                        <summary>已完成 {{ completed_tasks|length }}</summary>
+                        {% for t in completed_tasks %}{{ task_node(t) }}{% endfor %}
+                    </details>
+                    {% endif %}
+                </div>
+            </section>
+            {% endif %}
+        {% endfor %}
+
+        {% if None in tasks_by_goal %}
+        {% set branch_tasks = tasks_by_goal[None] %}
+        {% set in_progress_tasks = branch_tasks|selectattr('status','equalto','in_progress')|list %}
+        {% set pending_tasks = branch_tasks|selectattr('status','equalto','pending')|list %}
+        {% set completed_tasks = branch_tasks|selectattr('status','equalto','completed')|list %}
+        <section class="branch-group branch-group-muted">
+            <div class="branch-header">
+                <span class="tree-node-dot"></span>
+                <div>
+                    <div class="eyebrow">目标分支</div>
+                    <h2>未分组</h2>
+                    <p>这些任务节点还没有挂到明确的目标分支。</p>
+                </div>
+                <span class="badge badge-pending">{{ branch_tasks|length }} 个任务节点</span>
+            </div>
+            <div class="task-node-list">
+                {% for t in in_progress_tasks %}{{ task_node(t) }}{% endfor %}
+                {% if pending_tasks %}
+                <details class="task-status-group">
+                    <summary>待进行 {{ pending_tasks|length }}</summary>
+                    {% for t in pending_tasks %}{{ task_node(t) }}{% endfor %}
+                </details>
+                {% endif %}
+                {% if completed_tasks %}
+                <details class="task-status-group">
+                    <summary>已完成 {{ completed_tasks|length }}</summary>
+                    {% for t in completed_tasks %}{{ task_node(t) }}{% endfor %}
+                </details>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+    {% else %}
+    <div class="empty-state">
+        <p>还没有任务节点</p>
+        <a href="{{ url_for('task_new', project_id=project.id) }}" class="btn btn-primary">创建第一个任务</a>
+    </div>
+    {% endif %}
+</section>
+
+{% if logs %}
+<details class="card activity-log">
+    <summary>操作日志 {{ logs|length }}</summary>
+    <div class="timeline-list">
+        {% for log in logs[:15] %}
+        <div class="list-row">
+            <span>{{ log.created_at|localdt }}</span>
+            <span>{{ log.actor.display_name if log.actor else '系统' }}</span>
+            <strong>{{ log.action }}</strong>
+            {% if log.detail %}<span>{{ log.detail }}</span>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</details>
+{% endif %}
+
+<style>
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+.project-detail-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.eyebrow {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.section-title {
+    font-size: 20px;
+    margin-top: 2px;
+}
+.project-brief-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.project-brief-grid strong {
+    color: var(--text-secondary);
+    display: block;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+.project-brief-grid p {
+    line-height: 1.7;
+}
+.project-health-row {
+    border-top: 1px solid var(--border);
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin-top: 18px;
+    padding-top: 16px;
+}
+.project-health-row div {
+    background: var(--bg-soft);
+    border-radius: 8px;
+    padding: 10px;
+}
+.project-health-row strong {
+    display: block;
+    font-size: 20px;
+}
+.project-health-row span {
+    color: var(--text-secondary);
+    display: block;
+    font-size: 12px;
+}
+.admin-danger-zone {
+    color: var(--text-secondary);
+    margin: -4px 0 16px;
+}
+.admin-danger-zone summary {
+    cursor: pointer;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+.branch-tree {
+    margin-top: 18px;
+}
+.tree-root,
+.branch-header,
+.task-tree-node {
+    display: flex;
+    gap: 12px;
+    position: relative;
+}
+.tree-root {
+    align-items: center;
+    margin-bottom: 10px;
+}
+.tree-node-dot {
+    background: var(--primary);
+    border-radius: 999px;
+    flex: 0 0 10px;
+    height: 10px;
+    margin-top: 8px;
+    width: 10px;
+}
+.branch-group {
+    border-left: 2px solid var(--border);
+    margin-left: 4px;
+    padding: 0 0 18px 22px;
+}
+.branch-group-muted {
+    border-left-style: dashed;
+}
+.branch-header {
+    align-items: flex-start;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding: 14px;
+}
+.branch-header h2 {
+    font-size: 18px;
+    margin: 2px 0 4px;
+}
+.branch-header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+}
+.task-node-list {
+    border-left: 1px solid var(--border);
+    margin-left: 18px;
+    padding-left: 18px;
+}
+.task-tree-node {
+    align-items: flex-start;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 8px 0;
+    padding: 10px 12px;
+}
+.task-tree-node-risk {
+    border-color: var(--danger);
+}
+.task-node-status {
+    flex: 0 0 112px;
+}
+.task-status-select {
+    min-height: auto;
+    padding: 4px 8px;
+}
+.task-node-body {
+    flex: 1;
+    min-width: 0;
+}
+.task-node-title {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.task-node-title-done {
+    opacity: 0.65;
+    text-decoration: line-through;
+}
+.task-node-meta {
+    align-items: center;
+    color: var(--text-secondary);
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 13px;
+    gap: 8px;
+    margin-top: 6px;
+}
+.task-status-group {
+    margin: 8px 0;
+}
+.task-status-group summary,
+.activity-log summary {
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+}
+.activity-log {
+    margin-top: 24px;
+}
+@media (max-width: 768px) {
+    .project-brief-grid,
+    .project-health-row {
+        grid-template-columns: 1fr;
+    }
+    .branch-group {
+        padding-left: 14px;
+    }
+    .task-node-list {
+        margin-left: 10px;
+        padding-left: 12px;
+    }
+    .task-tree-node {
+        display: block;
+    }
+    .task-node-status {
+        margin-bottom: 8px;
+    }
+}
+</style>
+
+<script>
+(function () {
+    document.addEventListener('change', function (event) {
+        var select = event.target.closest('[data-autosubmit]');
+        if (select && select.form) select.form.submit();
+    });
+})();
+</script>
+
+{% endblock %}

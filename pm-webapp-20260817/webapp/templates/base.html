@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}项目协作平台{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- 防暗色闪白：在样式加载前根据 localStorage/系统偏好给 <html> 加 .dark -->
+    <script>
+    (function () {
+        var stored = null;
+        try { stored = localStorage.getItem('theme'); } catch (e) {}
+        var dark = stored === 'dark' ||
+            (stored !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+    })();
+    </script>
+</head>
+<body>
+    {% if current_user.is_authenticated %}
+    {% set role_label = '管理员' if current_user.role == 'admin' else ('项目人员' if current_user.role == 'project_member' else '成员') %}
+    <div class="app-shell">
+        <aside class="sidebar" aria-label="主导航">
+            <div class="sidebar-brand">
+                <a href="{{ url_for('my_work') }}" class="nav-brand" aria-label="项目协作平台">项目协作平台</a>
+                <span class="sidebar-kicker">任务流转中心</span>
+            </div>
+
+            <nav class="nav sidebar-nav">
+                <div class="nav-section">
+                    <span class="nav-section-title">个人</span>
+                    <a href="{{ url_for('my_work') }}" class="nav-link {% if request.endpoint == 'my_work' %}active{% endif %}" {% if request.endpoint == 'my_work' %}aria-current="page"{% endif %}>
+                        <span class="nav-icon" aria-hidden="true">M</span>
+                        <span>我的工作</span>
+                    </a>
+                </div>
+                <div class="nav-section">
+                    <span class="nav-section-title">协作</span>
+                    <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint in ['index', 'project_view', 'project_new', 'project_edit', 'goal_manage', 'task_new', 'task_view', 'task_edit'] %}active{% endif %}" {% if request.endpoint in ['index', 'project_view', 'project_new', 'project_edit', 'goal_manage', 'task_new', 'task_view', 'task_edit'] %}aria-current="page"{% endif %}>
+                        <span class="nav-icon" aria-hidden="true">P</span>
+                        <span>项目空间</span>
+                    </a>
+                    <div class="nav-subgroup" aria-label="团队态势">
+                        <span class="nav-section-title">团队态势</span>
+                        <a href="{{ url_for('progress') }}" class="nav-link nav-link-sub {% if request.endpoint == 'progress' %}active{% endif %}" {% if request.endpoint == 'progress' %}aria-current="page"{% endif %}>
+                            <span class="nav-icon" aria-hidden="true">G</span>
+                            <span>执行进度</span>
+                        </a>
+                        <a href="{{ url_for('blockers') }}" class="nav-link nav-link-sub {% if request.endpoint == 'blockers' %}active{% endif %}" {% if request.endpoint == 'blockers' %}aria-current="page"{% endif %}>
+                            <span class="nav-icon" aria-hidden="true">R</span>
+                            <span>风险与卡点</span>
+                        </a>
+                        <a href="{{ url_for('people') }}" class="nav-link nav-link-sub {% if request.endpoint == 'people' %}active{% endif %}" {% if request.endpoint == 'people' %}aria-current="page"{% endif %}>
+                            <span class="nav-icon" aria-hidden="true">T</span>
+                            <span>人员负载</span>
+                        </a>
+                    </div>
+                    <a href="{{ url_for('calendar') }}" class="nav-link {% if request.endpoint == 'calendar' %}active{% endif %}" {% if request.endpoint == 'calendar' %}aria-current="page"{% endif %}>
+                        <span class="nav-icon" aria-hidden="true">C</span>
+                        <span>日历</span>
+                    </a>
+                </div>
+                {% if current_user.is_admin() %}
+                <div class="nav-section">
+                    <span class="nav-section-title">系统管理</span>
+                    <a href="{{ url_for('user_list') }}" class="nav-link {% if request.endpoint and 'user_' in request.endpoint %}active{% endif %}" {% if request.endpoint and 'user_' in request.endpoint %}aria-current="page"{% endif %}>
+                        <span class="nav-icon" aria-hidden="true">A</span>
+                        <span>用户管理</span>
+                    </a>
+                </div>
+                {% endif %}
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="nav-user">
+                    <span class="avatar" aria-hidden="true">{{ current_user.display_name[:1] }}</span>
+                    <span>
+                        <strong>{{ current_user.display_name }}</strong>
+                        <span class="badge badge-{{ 'high' if current_user.role == 'admin' else ('medium' if current_user.role == 'project_member' else 'low') }}">{{ role_label }}</span>
+                    </span>
+                </div>
+                <div class="sidebar-tools">
+                    <form action="{{ url_for('theme_toggle') }}" method="post" title="切换明暗主题" class="theme-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="theme-toggle" aria-label="切换明暗主题">明暗</button>
+                    </form>
+                    <a href="{{ url_for('profile') }}" class="icon-link" aria-label="个人资料">资料</a>
+                    <a href="{{ url_for('logout') }}" class="btn-logout">退出</a>
+                </div>
+            </div>
+        </aside>
+
+        <header class="mobile-header">
+            <a href="{{ url_for('my_work') }}" class="nav-brand">项目协作平台</a>
+            <details class="mobile-menu">
+                <summary aria-label="打开导航">菜单</summary>
+                <nav class="mobile-nav" aria-label="移动端主导航">
+                    <a href="{{ url_for('my_work') }}" class="{% if request.endpoint == 'my_work' %}active{% endif %}">我的工作</a>
+                    <a href="{{ url_for('index') }}" class="{% if request.endpoint in ['index', 'project_view', 'project_new', 'project_edit', 'goal_manage', 'task_new', 'task_view', 'task_edit'] %}active{% endif %}">项目空间</a>
+                    <a href="{{ url_for('progress') }}" class="{% if request.endpoint == 'progress' %}active{% endif %}">执行进度</a>
+                    <a href="{{ url_for('blockers') }}" class="{% if request.endpoint == 'blockers' %}active{% endif %}">风险与卡点</a>
+                    <a href="{{ url_for('people') }}" class="{% if request.endpoint == 'people' %}active{% endif %}">人员负载</a>
+                    <a href="{{ url_for('calendar') }}" class="{% if request.endpoint == 'calendar' %}active{% endif %}">日历</a>
+                    {% if current_user.is_admin() %}
+                    <a href="{{ url_for('user_list') }}" class="{% if request.endpoint and 'user_' in request.endpoint %}active{% endif %}">用户管理</a>
+                    {% endif %}
+                    <div class="mobile-nav-tools">
+                        <form action="{{ url_for('theme_toggle') }}" method="post" title="切换明暗主题" class="theme-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="theme-toggle" aria-label="切换明暗主题">明暗</button>
+                        </form>
+                        <a href="{{ url_for('profile') }}" class="icon-link">个人资料</a>
+                        <a href="{{ url_for('logout') }}" class="btn-logout">退出</a>
+                    </div>
+                </nav>
+            </details>
+        </header>
+    {% endif %}
+
+    <main class="{% if current_user.is_authenticated %}app-main{% endif %}">
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, msg in messages %}
+            <div class="flash-msg flash-{{ category }}" role="alert">{{ msg }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+    </main>
+    {% if current_user.is_authenticated %}
+    </div>
+    {% endif %}
+
+    <!-- 通用确认弹窗（替代 confirm()，含焦点陷阱 + Esc 关闭） -->
+    <div id="confirm-dialog" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" hidden>
+        <div class="modal">
+            <h3 id="confirm-dialog-title" class="modal-title">确认操作</h3>
+            <p id="confirm-msg" class="modal-msg"></p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" id="confirm-cancel">取消</button>
+                <button type="button" class="btn btn-danger" id="confirm-ok">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+        // ---------- 主题切换 ----------
+        var themeForms = document.querySelectorAll('.theme-form');
+        themeForms.forEach(function (themeForm) {
+            themeForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                var dark = document.documentElement.classList.toggle('dark');
+                try { localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch (err) {}
+                var btn = themeForm.querySelector('button');
+                btn.textContent = dark ? '浅色' : '深色';
+                // 把偏好写回 session（redirect:'manual' 不跟随重定向，避免整页刷新丢滚动位置）
+                fetch(themeForm.action, { method: 'POST', body: new FormData(themeForm), redirect: 'manual' })
+                    .catch(function () {});
+            });
+            var dark = document.documentElement.classList.contains('dark');
+            themeForm.querySelector('button').textContent = dark ? '浅色' : '深色';
+        });
+
+        // ---------- data-confirm 确认弹窗 ----------
+        var dialog = document.getElementById('confirm-dialog');
+        var msgEl = document.getElementById('confirm-msg');
+        var okBtn = document.getElementById('confirm-ok');
+        var cancelBtn = document.getElementById('confirm-cancel');
+        var lastFocus = null;
+        var pendingForm = null;
+
+        function openDialog(form) {
+            pendingForm = form;
+            msgEl.textContent = form.getAttribute('data-confirm') || '确定执行此操作吗？';
+            dialog.hidden = false;
+            lastFocus = document.activeElement;
+            okBtn.focus();
+        }
+        function closeDialog() {
+            dialog.hidden = true;
+            pendingForm = null;
+            if (lastFocus && lastFocus.focus) lastFocus.focus();
+        }
+        cancelBtn.addEventListener('click', closeDialog);
+        okBtn.addEventListener('click', function () {
+            var f = pendingForm;
+            closeDialog();
+            if (f) {
+                f.setAttribute('data-confirmed', '1');
+                f.submit();
+            }
+        });
+        dialog.addEventListener('click', function (e) {
+            if (e.target === dialog) closeDialog();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (dialog.hidden) return;
+            if (e.key === 'Escape') { closeDialog(); return; }
+            // 焦点陷阱：在 取消/确认 之间循环
+            if (e.key === 'Tab') {
+                var focusables = [okBtn, cancelBtn];
+                var idx = focusables.indexOf(document.activeElement);
+                if (idx === -1) idx = 0;
+                e.preventDefault();
+                focusables[(idx + 1) % focusables.length].focus();
+            }
+        });
+        // 捕获阶段拦截所有带 data-confirm 的表单
+        document.addEventListener('submit', function (e) {
+            var f = e.target;
+            if (f && f.getAttribute && f.getAttribute('data-confirm') && !f.getAttribute('data-confirmed')) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                openDialog(f);
+            }
+        }, true);
+
+        // ---------- 通用 data-* 委托：带 data-edit-user 的按钮打开用户编辑 ----------
+        var editModal = document.getElementById('edit-modal');
+        if (editModal) {
+            document.addEventListener('click', function (e) {
+                var btn = e.target.closest ? e.target.closest('[data-edit-user]') : null;
+                if (!btn) return;
+                e.preventDefault();
+                document.getElementById('edit-id').value = btn.getAttribute('data-id');
+                document.getElementById('edit-username').value = btn.getAttribute('data-username');
+                document.getElementById('edit-display').value = btn.getAttribute('data-display');
+                document.getElementById('edit-role').value = btn.getAttribute('data-role');
+                document.getElementById('edit-form').action = '/user/' + btn.getAttribute('data-id') + '/edit';
+                editModal.style.display = 'flex';
+                var firstInput = editModal.querySelector('input:not([type=hidden])');
+                if (firstInput) firstInput.focus();
+            });
+            var closeEdit = function () { editModal.style.display = 'none'; };
+            editModal.addEventListener('click', function (e) { if (e.target === editModal) closeEdit(); });
+            var editCloseBtn = editModal.querySelector('.modal-close');
+            if (editCloseBtn) editCloseBtn.addEventListener('click', closeEdit);
+            document.addEventListener('keydown', function (e) {
+                if (editModal.style.display === 'flex' && e.key === 'Escape') closeEdit();
+            });
+        }
+    })();
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

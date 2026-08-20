@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}项目空间{% endblock %}
+{% block content %}
+
+<div class="page-header project-space-header">
+    <div>
+        <h1>项目空间</h1>
+        <p class="page-subtitle">按项目查看当前主线、任务规模和风险摘要。</p>
+    </div>
+    <div class="project-space-actions">
+        <label for="search" class="sr-only">搜索项目</label>
+        <input type="search" id="search" class="form-control project-search" placeholder="搜索项目">
+        {% if current_user.is_admin() %}
+        <a href="{{ url_for('project_new') }}" class="btn btn-primary">新建项目</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="project-tabs" role="tablist" aria-label="项目状态筛选">
+    <a href="{{ url_for('index', status='active') }}" class="project-tab {% if status == 'active' %}active{% endif %}" {% if status == 'active' %}aria-current="page"{% endif %}>进行中</a>
+    <a href="{{ url_for('index', status='completed') }}" class="project-tab {% if status == 'completed' %}active{% endif %}" {% if status == 'completed' %}aria-current="page"{% endif %}>已完成</a>
+    <a href="{{ url_for('index', status='archived') }}" class="project-tab {% if status == 'archived' %}active{% endif %}" {% if status == 'archived' %}aria-current="page"{% endif %}>归档</a>
+</div>
+
+{% if projects %}
+<div class="project-grid project-summary-grid">
+    {% for p in projects %}
+    {% set stats = p.task_stats() %}
+    {% set completed_count = stats.total - stats.open %}
+    <article class="card project-card project-summary-card {% if p.status == 'archived' %}project-card-archived{% endif %}" data-name="{{ p.name|lower }}" data-href="{{ url_for('project_view', project_id=p.id) }}" role="link" tabindex="0" aria-label="打开项目 {{ p.name }}">
+        <div class="card-header project-card-titlebar">
+            <div>
+                <a href="{{ url_for('project_view', project_id=p.id) }}" class="project-title">
+                    {% if p.id in pinned_ids %}<span aria-label="已置顶">置顶</span>{% endif %}{{ p.name }}
+                </a>
+                <div class="project-meta">
+                    {% if p.lead %}<span>负责人：{{ p.lead.display_name }}</span>{% else %}<span>负责人：未指定</span>{% endif %}
+                    {% if p.created_at %}<span>创建：{{ p.created_at|localdt_short }}</span>{% endif %}
+                </div>
+            </div>
+            {% if p.status == 'active' %}
+            <span class="badge badge-in-progress">进行中</span>
+            {% elif p.status == 'completed' %}
+            <span class="badge badge-resolved">已完成</span>
+            {% elif p.status == 'archived' %}
+            <span class="badge badge-closed">已归档</span>
+            {% endif %}
+        </div>
+
+        {% if p.description %}
+        <p class="project-description">{{ p.description[:160] }}</p>
+        {% endif %}
+
+        <div class="project-metrics" aria-label="{{ p.name }} 关键指标">
+            <div>
+                <strong>{{ stats.total }}</strong>
+                <span>任务总数</span>
+            </div>
+            <div>
+                <strong>{{ stats.open }}</strong>
+                <span>未完成</span>
+            </div>
+            <div>
+                <strong>{{ completed_count }}</strong>
+                <span>已完成</span>
+            </div>
+            <div>
+                <strong>{{ p.progress_pct() }}%</strong>
+                <span>进度</span>
+            </div>
+        </div>
+
+        <div class="project-risk-summary" aria-label="{{ p.name }} 风险摘要">
+            {% if stats.overdue > 0 %}
+            <span class="badge badge-overdue">{{ stats.overdue }} 个逾期</span>
+            {% endif %}
+            {% if stats.unassigned > 0 %}
+            <span class="badge badge-medium">{{ stats.unassigned }} 个无人负责</span>
+            {% endif %}
+            {% if stats.overdue == 0 and stats.unassigned == 0 %}
+            <span class="badge badge-resolved">暂无高风险</span>
+            {% endif %}
+        </div>
+
+        <div class="project-card-actions">
+            {% if p.status == 'archived' %}
+            <form action="{{ url_for('project_restore', project_id=p.id) }}" method="post" data-card-action data-confirm="确定恢复这个归档项目为进行中？">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline btn-xs">恢复</button>
+            </form>
+            {% else %}
+            <form action="{{ url_for('project_toggle_pin', project_id=p.id) }}" method="post" data-card-action>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                {% if p.id in pinned_ids %}
+                <button type="submit" class="btn btn-outline btn-xs" title="取消置顶" aria-label="取消置顶">取消置顶</button>
+                {% else %}
+                <button type="submit" class="btn btn-outline btn-xs" title="置顶关注" aria-label="置顶关注">置顶</button>
+                {% endif %}
+            </form>
+            <form action="{{ url_for('project_priority_move', project_id=p.id, direction='up') }}" method="post" data-card-action>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline btn-xs" title="提高重要度" aria-label="提高项目重要度">上移</button>
+            </form>
+            <form action="{{ url_for('project_priority_move', project_id=p.id, direction='down') }}" method="post" data-card-action>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline btn-xs" title="降低重要度" aria-label="降低项目重要度">下移</button>
+            </form>
+            {% endif %}
+        </div>
+    </article>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    {% if status == 'archived' %}
+    <p>没有归档项目</p>
+    <p>在项目编辑里把状态改为「归档」后，会出现在这里。</p>
+    {% elif status == 'completed' %}
+    <p>还没有已完成的项目</p>
+    <p>项目完成后在编辑里把状态改为「已完成」。</p>
+    {% else %}
+    <p>还没有项目</p>
+    {% if current_user.is_admin() %}
+    <a href="{{ url_for('project_new') }}" class="btn btn-primary">创建第一个项目</a>
+    {% else %}
+    <p>请联系管理员创建项目。</p>
+    {% endif %}
+    {% endif %}
+</div>
+{% endif %}
+
+<style>
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+.page-subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-top: 4px;
+}
+.project-space-actions {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+}
+.project-search {
+    max-width: 220px;
+}
+.project-summary-card {
+    cursor: pointer;
+    margin-bottom: 0;
+}
+.project-card-titlebar {
+    align-items: flex-start;
+}
+.project-title {
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.project-title span {
+    color: var(--primary-strong);
+    font-size: 12px;
+    margin-right: 6px;
+}
+.project-meta,
+.project-risk-summary,
+.project-card-actions {
+    align-items: center;
+    color: var(--text-secondary);
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 12px;
+    gap: 8px;
+    margin-top: 8px;
+}
+.project-description {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.7;
+    margin-bottom: 14px;
+}
+.project-metrics {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 12px;
+}
+.project-metrics div {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+}
+.project-metrics strong {
+    display: block;
+    font-size: 20px;
+}
+.project-metrics span {
+    color: var(--text-secondary);
+    display: block;
+    font-size: 12px;
+    margin-top: 2px;
+}
+.project-card-actions {
+    border-top: 1px solid var(--border);
+    justify-content: flex-end;
+    padding-top: 12px;
+}
+@media (max-width: 768px) {
+    .project-space-actions,
+    .project-search {
+        width: 100%;
+    }
+    .project-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+</style>
+
+<script>
+(function () {
+    var search = document.getElementById('search');
+    if (search) {
+        search.addEventListener('input', function () {
+            var q = search.value.toLowerCase();
+            document.querySelectorAll('.project-summary-card').forEach(function (card) {
+                var name = card.getAttribute('data-name') || '';
+                card.hidden = !name.includes(q);
+            });
+        });
+    }
+    document.querySelectorAll('.project-summary-card').forEach(function (card) {
+        card.addEventListener('click', function (event) {
+            if (event.target.closest('a, button, form, input, select, textarea')) return;
+            window.location.href = card.getAttribute('data-href');
+        });
+        card.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') window.location.href = card.getAttribute('data-href');
+        });
+    });
+})();
+</script>
+
+{% endblock %}

@@ -1,0 +1,85 @@
+{# _task_card.html - compact task row shared by project.html and my-work.html #}
+{% set can_update_task = current_user.can_edit_task(t) %}
+{% set is_stale = stale_task_ids is defined and t.id in stale_task_ids %}
+{% set latest_progress = t.progress_logs[0] if t.progress_logs else none %}
+{% set due_class = 'ok' %}
+{% set due_text = '未设截止' %}
+{% if t.due_date %}
+    {% set days_left = (t.due_date - today).days %}
+    {% if days_left < 0 %}
+        {% set due_class = 'overdue' %}
+        {% set due_text = '逾期 ' ~ (-days_left) ~ ' 天' %}
+    {% elif days_left == 0 %}
+        {% set due_class = 'soon' %}
+        {% set due_text = '今天到期' %}
+    {% elif days_left == 1 %}
+        {% set due_class = 'soon' %}
+        {% set due_text = '明天到期' %}
+    {% elif days_left <= 3 %}
+        {% set due_class = 'near' %}
+        {% set due_text = days_left ~ ' 天后到期' %}
+    {% else %}
+        {% set due_text = t.due_date.strftime('%m/%d') %}
+    {% endif %}
+{% endif %}
+
+<article class="card task-item task-item-{{ t.status }}{% if t.is_overdue() %} task-item-overdue{% endif %}{% if is_stale %} task-item-stale{% endif %}">
+    <div class="task-item-main list-row">
+        <div class="task-row-status">
+            {% if can_update_task %}
+            <form action="{{ url_for('task_quick_status', task_id=t.id) }}" method="post" class="task-status-form" onclick="event.stopPropagation()">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <select id="status-{{ t.id }}" name="status" class="form-control" aria-label="任务状态" onchange="this.form.submit()">
+                    <option value="pending" {% if t.status == 'pending' %}selected{% endif %}>待进行</option>
+                    <option value="in_progress" {% if t.status == 'in_progress' %}selected{% endif %}>进行中</option>
+                    <option value="completed" {% if t.status == 'completed' %}selected{% endif %}>已完成</option>
+                </select>
+            </form>
+            {% else %}
+            <span class="badge badge-{{ 'resolved' if t.status=='completed' else ('in-progress' if t.status=='in_progress' else 'pending') }}">{{ t.status_label() }}</span>
+            {% endif %}
+        </div>
+
+        <div class="task-row-content">
+            <a href="{{ url_for('task_view', task_id=t.id) }}" class="task-row-title{% if t.status == 'completed' %} task-row-title-done{% endif %}">
+                {{ t.title }}
+            </a>
+            <div class="task-row-meta">
+                <span>{{ t.project.name }}</span>
+                {% if task_relation is defined %}<span>{{ task_relation }}</span>{% endif %}
+                {% if t.goal %}<span>目标分支: {{ t.goal.title }}</span>{% endif %}
+                {% if t.assignee %}<span>负责人: {{ t.assignee.display_name }}</span>{% else %}<span>负责人: 未指定</span>{% endif %}
+                {% if t.reviewer %}<span>验收: {{ t.reviewer.display_name }}</span>{% endif %}
+                {% if t.members.count() > 0 %}<span>成员: {{ t.members.count() }} 人</span>{% endif %}
+            </div>
+            <div class="task-row-progress">
+                {% if latest_progress %}
+                <span>最近进展: {{ latest_progress.content }}</span>
+                <span>{{ latest_progress.created_at|localdt_short }}</span>
+                {% elif t.last_progress_at %}
+                <span>最近进展已更新</span>
+                <span>{{ t.last_progress_at|localdt_short }}</span>
+                {% else %}
+                <span>尚未记录进展</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="task-row-signals">
+            {% if is_stale and t.status != 'completed' %}
+            <span class="badge badge-overdue">待更新</span>
+            {% endif %}
+            <span class="due-chip {{ due_class }}">
+                {% if t.due_date %}{{ t.due_date.strftime('%m/%d') }} · {% endif %}{{ due_text }}
+            </span>
+        </div>
+    </div>
+
+    {% if can_update_task and t.status != 'completed' %}
+    <form action="{{ url_for('task_progress', task_id=t.id) }}" method="post" class="task-inline-progress">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <textarea id="progress-{{ t.id }}" name="content" class="form-control" rows="2" placeholder="记录本次推进、阻塞或下一步" aria-label="记录进展" required></textarea>
+        <button type="submit" class="btn btn-primary btn-sm">记录进展</button>
+    </form>
+    {% endif %}
+</article>

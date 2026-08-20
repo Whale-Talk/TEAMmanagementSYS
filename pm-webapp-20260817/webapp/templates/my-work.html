@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}我的工作{% endblock %}
+{% block content %}
+
+{% macro section_count(tasks, status=None) -%}
+    {%- set ns = namespace(count=0) -%}
+    {%- for item in tasks -%}
+        {%- if not status or item.status == status -%}{%- set ns.count = ns.count + 1 -%}{%- endif -%}
+    {%- endfor -%}
+    {{- ns.count -}}
+{%- endmacro %}
+
+{% macro task_group(title, tasks, relation, default_open=True) %}
+    {% if tasks %}
+    {% set group_id = 'mw-' ~ relation %}
+    <section class="card work-section action-section">
+        <button type="button" class="collapse-toggle section-toggle" onclick="toggleCollapse('{{ group_id }}', this)" aria-controls="{{ group_id }}" aria-expanded="{{ 'true' if default_open else 'false' }}">
+            {{ '▼' if default_open else '▶' }} {{ title }} <span class="badge badge-pending">{{ tasks|length }}</span>
+        </button>
+        <div id="{{ group_id }}" {% if not default_open %}hidden{% endif %}>
+            {% set active_tasks = tasks|selectattr('status','ne','completed')|list %}
+            {% set completed_tasks = tasks|selectattr('status','equalto','completed')|list %}
+            {% if active_tasks %}
+                {% for t in active_tasks %}
+                    {% set task_relation = title %}
+                    {% include "_task_card.html" %}
+                {% endfor %}
+            {% endif %}
+            {% if completed_tasks %}
+            <button type="button" class="collapse-toggle subsection-toggle" onclick="toggleCollapse('{{ group_id }}-done', this)" aria-controls="{{ group_id }}-done" aria-expanded="false">
+                ▶ 已完成 <span class="badge badge-resolved">{{ completed_tasks|length }}</span>
+            </button>
+            <div id="{{ group_id }}-done" hidden>
+                {% for t in completed_tasks %}
+                    {% set task_relation = title %}
+                    {% include "_task_card.html" %}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </section>
+    {% endif %}
+{% endmacro %}
+
+<div class="page-header">
+    <div>
+        <h1>我的工作</h1>
+        <p class="page-subtitle">今天优先处理逾期、临近截止和超过 3 天未更新的任务。</p>
+    </div>
+</div>
+
+<section class="work-focus-grid grid-2">
+    <div class="card work-focus-card">
+        <div class="card-header">
+            <div class="card-title">今日行动</div>
+            <span class="badge badge-in-progress">负责人任务 {{ my_assigned|length }}</span>
+        </div>
+        <div class="work-signal-list">
+            {% set action_ns = namespace(count=0) %}
+            {% for t in my_assigned %}
+                {% if t.status != 'completed' and (t.is_overdue() or (t.due_date and (t.due_date - today).days <= 3) or (t.id in stale_task_ids) or t.status == 'in_progress') %}
+                    {% set action_ns.count = action_ns.count + 1 %}
+                    {% set task_relation = '我负责' %}
+                    {% include "_task_card.html" %}
+                {% endif %}
+            {% endfor %}
+            {% if action_ns.count == 0 %}
+            <div class="empty-state">
+                <p>当前没有需要立即处理的负责人任务。</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card work-focus-card">
+        <div class="card-title">风险摘要</div>
+        <div class="list-row">
+            <strong>待更新</strong>
+            <span>{{ stale_task_ids|length }} 个任务超过 3 天未记录进展</span>
+        </div>
+        <div class="list-row">
+            <strong>逾期</strong>
+            <span>
+                {% set ns = namespace(count=0) %}
+                {% for t in my_assigned + my_member %}
+                    {% if t.status != 'completed' and t.is_overdue() %}{% set ns.count = ns.count + 1 %}{% endif %}
+                {% endfor %}
+                {{ ns.count }} 个任务已经超过截止日期
+            </span>
+        </div>
+        <div class="list-row">
+            <strong>即将到期</strong>
+            <span>
+                {% set ns = namespace(count=0) %}
+                {% for t in my_assigned + my_member %}
+                    {% if t.status != 'completed' and t.due_date and (t.due_date - today).days >= 0 and (t.due_date - today).days <= 3 %}{% set ns.count = ns.count + 1 %}{% endif %}
+                {% endfor %}
+                {{ ns.count }} 个任务 3 天内到期
+            </span>
+        </div>
+        <div class="list-row">
+            <strong>进行中</strong>
+            <span>{{ section_count(my_assigned + my_member, 'in_progress') }} 个任务正在推进</span>
+        </div>
+    </div>
+</section>
+
+{{ task_group('我负责', my_assigned, 'assigned', True) }}
+{{ task_group('我参与', my_member, 'member', True) }}
+{{ task_group('我验收', my_reviewed, 'reviewed', False) }}
+
+{% if my_projects or involved_projects %}
+<section class="card work-projects">
+    <div class="card-header">
+        <div class="card-title">相关项目</div>
+        <span class="badge badge-pending">{{ my_projects|length + involved_projects|length }}</span>
+    </div>
+    {% if my_projects %}
+    <div class="work-project-group">
+        <div class="section-label">我管理的项目</div>
+        {% for p in my_projects %}
+        <a href="{{ url_for('project_view', project_id=p.id) }}" class="list-row project-row">
+            <span>{{ p.name }}</span>
+            {% if p.lead_id == current_user.id %}
+            <span class="badge badge-in-progress">负责人</span>
+            {% else %}
+            <span class="badge badge-medium">项目人员</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if involved_projects %}
+    <div class="work-project-group">
+        <div class="section-label">我参与的项目</div>
+        {% for p in involved_projects %}
+        <a href="{{ url_for('project_view', project_id=p.id) }}" class="list-row project-row">
+            <span>{{ p.name }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if not my_assigned and not my_member and not my_reviewed and not my_projects and not involved_projects %}
+<div class="empty-state">
+    <p>暂无相关任务和项目。</p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleCollapse(id, btn) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var isHidden = el.hidden || el.style.display === 'none';
+    el.hidden = !isHidden;
+    el.style.display = isHidden ? 'block' : 'none';
+    btn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+    var text = btn.textContent.trim();
+    btn.textContent = isHidden ? text.replace('▶', '▼') : text.replace('▼', '▶');
+}
+</script>
+{% endblock %}

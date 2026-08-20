@@ -1,0 +1,29 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local configuration and state
+.env
+database.db
+*.db-wal
+*.db-shm
+instance/
+
+# Runtime output
+*.log
+*.pid
+
+# Local agent/runtime state
+.agents/
+.codex/
+.omx/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

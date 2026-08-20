@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}AI 工作总结{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>工作总结</h1>
+        <p class="reports-subtitle">按时间段生成和查看团队工作汇总。</p>
+    </div>
+</div>
+
+<div class="card report-generate-card">
+    <div class="card-header">
+        <span class="card-title">生成时间段总结</span>
+    </div>
+    {% if not ai_available %}
+    <div class="flash-msg flash-error" role="alert">AI 未配置：请在 webapp/.env 设置 DEEPSEEK_API_KEY 后重启服务。</div>
+    {% else %}
+    <form method="post" action="{{ url_for('report_generate') }}" id="report-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="report-form-grid">
+            <div class="form-group compact-form-group">
+                <label for="date_from">开始日期</label>
+                <input type="date" name="date_from" id="date_from" class="form-control" required value="{{ default_from }}">
+            </div>
+            <div class="form-group compact-form-group">
+                <label for="date_to">结束日期</label>
+                <input type="date" name="date_to" id="date_to" class="form-control" required value="{{ default_to }}">
+            </div>
+            <button type="submit" class="btn btn-primary" id="report-submit">生成总结</button>
+        </div>
+        <p class="report-help">
+            系统会自动聚合该时间段内所有人的工作（任务/问题/讨论/操作），AI 基于真实数据生成总体 + 每人总结，并保存为历史报告。
+        </p>
+    </form>
+    {% endif %}
+</div>
+
+<h2 class="report-list-title">历史报告</h2>
+
+{% if reports %}
+<div class="report-list">
+    {% for r in reports %}
+    <article class="card report-list-item">
+        <div>
+            <a href="{{ url_for('report_detail', report_id=r.id) }}" class="report-list-link">
+                {{ r.title }}
+            </a>
+            <p class="report-list-meta">{{ r.created_by.display_name if r.created_by else '—' }} · {{ r.created_at|localdt_short }}</p>
+        </div>
+        <form action="{{ url_for('report_delete', report_id=r.id) }}" method="post" class="inline-form"
+              data-confirm="确定删除这份报告？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline btn-xs">删除</button>
+        </form>
+    </article>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>还没有生成过报告</p>
+    <p class="empty-help">选择时间段，点击“生成总结”开始。</p>
+</div>
+{% endif %}
+
+<div id="report-loading" class="modal-overlay" role="dialog" aria-modal="true" aria-label="AI 生成中" hidden>
+    <div class="modal report-loading-modal">
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="loading-title">AI 正在汇总</p>
+        <p class="loading-help">通常需 30 到 90 秒，请勿关闭页面。</p>
+    </div>
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById('report-form');
+    if (!form) return;
+    var overlay = document.getElementById('report-loading');
+    form.addEventListener('submit', function () {
+        if (overlay) overlay.hidden = false;
+    });
+})();
+</script>
+
+<style>
+.reports-subtitle,
+.report-help,
+.report-list-meta,
+.empty-help,
+.loading-help {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.report-form-grid {
+    display: grid;
+    grid-template-columns: minmax(160px, 220px) minmax(160px, 220px) auto;
+    gap: 12px;
+    align-items: end;
+}
+.compact-form-group { margin-bottom: 0; }
+.report-help { margin-top: 10px; }
+.report-list-title {
+    font-size: 17px;
+    color: var(--text-secondary);
+    margin: 24px 0 12px;
+}
+.report-list {
+    display: grid;
+    gap: 12px;
+}
+.report-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+}
+.report-list-link {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+}
+.report-list-link:hover { color: var(--primary); }
+.inline-form { display: inline-flex; }
+.report-loading-modal { text-align: center; }
+.loading-title {
+    margin-top: 16px;
+    font-size: 15px;
+    font-weight: 600;
+}
+.loading-help { margin-top: 6px; }
+@media (max-width: 640px) {
+    .report-form-grid { grid-template-columns: 1fr; }
+    .report-form-grid .btn { justify-content: center; }
+    .report-list-item { align-items: flex-start; flex-direction: column; }
+}
+</style>
+
+{% endblock %}

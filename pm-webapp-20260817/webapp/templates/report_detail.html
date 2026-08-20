@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ report.title }}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <a href="{{ url_for('reports') }}" class="btn btn-outline btn-sm back-button">
+            <span aria-hidden="true">←</span><span class="back-button-label">返回工作总结</span>
+        </a>
+        <h1>{{ report.title }}</h1>
+    </div>
+    <div class="report-actions">
+        <a href="{{ url_for('report_export', report_id=report.id) }}" class="btn btn-outline btn-sm">导出 Markdown</a>
+        <button type="button" class="btn btn-outline btn-sm" id="copy-btn">复制 Markdown</button>
+        <form action="{{ url_for('report_delete', report_id=report.id) }}" method="post" class="inline-form"
+              data-confirm="确定删除这份报告？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-danger btn-sm">删除</button>
+        </form>
+    </div>
+</div>
+
+<div class="report-meta">
+    <span>时间段：<strong>{{ report.date_from.strftime('%Y-%m-%d') }}</strong> ~ <strong>{{ report.date_to.strftime('%Y-%m-%d') }}</strong></span>
+    <span>生成人：{{ report.created_by.display_name if report.created_by else '—' }}</span>
+    <span>{{ report.created_at|localdt }}</span>
+</div>
+
+{% if not summary %}
+<div class="empty-state"><p>报告内容为空或格式异常</p></div>
+{% else %}
+
+<!-- 一、总体总结 -->
+<section class="report-section">
+    <h2 class="report-h2"><span class="report-num">一</span>总体总结</h2>
+    <div class="card">
+        <p class="report-overall">{{ summary.overall }}</p>
+
+        {% if summary.highlights %}
+        <div class="report-block">
+            <h3 class="report-h3 report-h3-success">亮点</h3>
+            <ol class="report-ol">
+                {% for h in summary.highlights %}<li>{{ h }}</li>{% endfor %}
+            </ol>
+        </div>
+        {% endif %}
+
+        {% if summary.risks %}
+        <div class="report-block">
+            <h3 class="report-h3 report-h3-danger">风险与待关注</h3>
+            <ol class="report-ol">
+                {% for r in summary.risks %}<li>{{ r }}</li>{% endfor %}
+            </ol>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- 二、项目进展 -->
+{% if summary.projects %}
+<section class="report-section">
+    <h2 class="report-h2"><span class="report-num">二</span>项目进展</h2>
+    {% for p in summary.projects %}
+    <div class="card report-item">
+        <div class="report-item-head">
+            <span class="report-item-num">{{ loop.index }}</span>
+            <span class="report-item-title">{{ p.name }}</span>
+        </div>
+        <p class="report-item-body">{{ p.summary }}</p>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+<!-- 三、成员总结 -->
+{% if summary.members %}
+<section class="report-section">
+    <h2 class="report-h2"><span class="report-num">三</span>成员总结</h2>
+    {% for m in summary.members %}
+        <div class="card report-item">
+            <div class="report-item-head">
+                <span class="report-item-num">{{ loop.index }}</span>
+                <span class="report-item-title">{{ m.name }}</span>
+            </div>
+            <p class="report-item-body">{{ m.summary }}</p>
+        </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+{% endif %}
+
+<script>
+(function () {
+    var MD = {{ md|tojson }};
+    var btn = document.getElementById('copy-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+        function done(ok) {
+            btn.textContent = ok ? '已复制' : '复制失败';
+            setTimeout(function () { btn.textContent = '复制 Markdown'; }, 2000);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(MD).then(function () { done(true); }, function () { done(false); });
+        } else {
+            var t = document.createElement('textarea');
+            t.value = MD;
+            t.style.position = 'fixed';
+            t.style.opacity = '0';
+            document.body.appendChild(t);
+            t.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(t);
+            done(ok);
+        }
+    });
+})();
+</script>
+
+<style>
+.inline-form { display: inline-flex; }
+@media (max-width: 640px) {
+    .report-actions {
+        width: 100%;
+        align-items: stretch;
+    }
+    .report-actions .btn,
+    .report-actions .inline-form,
+    .report-actions .inline-form .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+</style>
+
+{% endblock %}
