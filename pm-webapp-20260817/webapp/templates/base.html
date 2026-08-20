@@ -28,35 +28,40 @@
 
             <nav class="nav sidebar-nav">
                 <div class="nav-section">
-                    <span class="nav-section-title">个人</span>
+                    <span class="nav-section-title">工作台</span>
                     <a href="{{ url_for('my_work') }}" class="nav-link {% if request.endpoint == 'my_work' %}active{% endif %}" {% if request.endpoint == 'my_work' %}aria-current="page"{% endif %}>
-                        <span class="nav-icon" aria-hidden="true">M</span>
+                        <span class="nav-icon" aria-hidden="true">我</span>
                         <span>我的工作</span>
                     </a>
                 </div>
                 <div class="nav-section">
-                    <span class="nav-section-title">协作</span>
+                    <span class="nav-section-title">项目协作</span>
                     <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint in ['index', 'project_view', 'project_new', 'project_edit', 'goal_manage', 'task_new', 'task_view', 'task_edit'] %}active{% endif %}" {% if request.endpoint in ['index', 'project_view', 'project_new', 'project_edit', 'goal_manage', 'task_new', 'task_view', 'task_edit'] %}aria-current="page"{% endif %}>
-                        <span class="nav-icon" aria-hidden="true">P</span>
+                        <span class="nav-icon" aria-hidden="true">项</span>
                         <span>项目空间</span>
                     </a>
-                    <div class="nav-subgroup" aria-label="团队态势">
-                        <span class="nav-section-title">团队态势</span>
-                        <a href="{{ url_for('progress') }}" class="nav-link nav-link-sub {% if request.endpoint == 'progress' %}active{% endif %}" {% if request.endpoint == 'progress' %}aria-current="page"{% endif %}>
-                            <span class="nav-icon" aria-hidden="true">G</span>
-                            <span>执行进度</span>
-                        </a>
-                        <a href="{{ url_for('blockers') }}" class="nav-link nav-link-sub {% if request.endpoint == 'blockers' %}active{% endif %}" {% if request.endpoint == 'blockers' %}aria-current="page"{% endif %}>
-                            <span class="nav-icon" aria-hidden="true">R</span>
-                            <span>风险与卡点</span>
-                        </a>
-                        <a href="{{ url_for('people') }}" class="nav-link nav-link-sub {% if request.endpoint == 'people' %}active{% endif %}" {% if request.endpoint == 'people' %}aria-current="page"{% endif %}>
-                            <span class="nav-icon" aria-hidden="true">T</span>
-                            <span>人员负载</span>
-                        </a>
+                    <div class="nav-subgroup {% if request.endpoint in ['progress', 'blockers', 'people'] %}active{% endif %}" aria-labelledby="team-status-nav-title">
+                        <div class="nav-parent-label" id="team-status-nav-title">
+                            <span class="nav-parent-icon" aria-hidden="true">态</span>
+                            <span>团队态势</span>
+                        </div>
+                        <div class="nav-subitems">
+                            <a href="{{ url_for('progress') }}" class="nav-link nav-link-sub {% if request.endpoint == 'progress' %}active{% endif %}" {% if request.endpoint == 'progress' %}aria-current="page"{% endif %}>
+                                <span class="nav-sub-marker" aria-hidden="true"></span>
+                                <span>执行进度</span>
+                            </a>
+                            <a href="{{ url_for('blockers') }}" class="nav-link nav-link-sub {% if request.endpoint == 'blockers' %}active{% endif %}" {% if request.endpoint == 'blockers' %}aria-current="page"{% endif %}>
+                                <span class="nav-sub-marker" aria-hidden="true"></span>
+                                <span>风险与卡点</span>
+                            </a>
+                            <a href="{{ url_for('people') }}" class="nav-link nav-link-sub {% if request.endpoint == 'people' %}active{% endif %}" {% if request.endpoint == 'people' %}aria-current="page"{% endif %}>
+                                <span class="nav-sub-marker" aria-hidden="true"></span>
+                                <span>人员负载</span>
+                            </a>
+                        </div>
                     </div>
                     <a href="{{ url_for('calendar') }}" class="nav-link {% if request.endpoint == 'calendar' %}active{% endif %}" {% if request.endpoint == 'calendar' %}aria-current="page"{% endif %}>
-                        <span class="nav-icon" aria-hidden="true">C</span>
+                        <span class="nav-icon" aria-hidden="true">日</span>
                         <span>日历</span>
                     </a>
                 </div>
@@ -64,7 +69,7 @@
                 <div class="nav-section">
                     <span class="nav-section-title">系统管理</span>
                     <a href="{{ url_for('user_list') }}" class="nav-link {% if request.endpoint and 'user_' in request.endpoint %}active{% endif %}" {% if request.endpoint and 'user_' in request.endpoint %}aria-current="page"{% endif %}>
-                        <span class="nav-icon" aria-hidden="true">A</span>
+                        <span class="nav-icon" aria-hidden="true">管</span>
                         <span>用户管理</span>
                     </a>
                 </div>
@@ -95,13 +100,17 @@
             <details class="mobile-menu">
                 <summary aria-label="打开导航">菜单</summary>
                 <nav class="mobile-nav" aria-label="移动端主导航">
+                    <span class="mobile-nav-section-title">工作台</span>
                     <a href="{{ url_for('my_work') }}" class="{% if request.endpoint == 'my_work' %}active{% endif %}">我的工作</a>
+                    <span class="mobile-nav-section-title">项目协作</span>
                     <a href="{{ url_for('index') }}" class="{% if request.endpoint in ['index', 'project_view', 'project_new', 'project_edit', 'goal_manage', 'task_new', 'task_view', 'task_edit'] %}active{% endif %}">项目空间</a>
-                    <a href="{{ url_for('progress') }}" class="{% if request.endpoint == 'progress' %}active{% endif %}">执行进度</a>
-                    <a href="{{ url_for('blockers') }}" class="{% if request.endpoint == 'blockers' %}active{% endif %}">风险与卡点</a>
-                    <a href="{{ url_for('people') }}" class="{% if request.endpoint == 'people' %}active{% endif %}">人员负载</a>
+                    <span class="mobile-nav-parent-label {% if request.endpoint in ['progress', 'blockers', 'people'] %}active{% endif %}">团队态势</span>
+                    <a href="{{ url_for('progress') }}" class="mobile-nav-sub {% if request.endpoint == 'progress' %}active{% endif %}">执行进度</a>
+                    <a href="{{ url_for('blockers') }}" class="mobile-nav-sub {% if request.endpoint == 'blockers' %}active{% endif %}">风险与卡点</a>
+                    <a href="{{ url_for('people') }}" class="mobile-nav-sub {% if request.endpoint == 'people' %}active{% endif %}">人员负载</a>
                     <a href="{{ url_for('calendar') }}" class="{% if request.endpoint == 'calendar' %}active{% endif %}">日历</a>
                     {% if current_user.is_admin() %}
+                    <span class="mobile-nav-section-title">系统管理</span>
                     <a href="{{ url_for('user_list') }}" class="{% if request.endpoint and 'user_' in request.endpoint %}active{% endif %}">用户管理</a>
                     {% endif %}
                     <div class="mobile-nav-tools">

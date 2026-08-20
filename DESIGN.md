@@ -22,7 +22,7 @@
 - Key contexts of use: 每日任务更新、项目例会、截止日期检查、周度进度复盘。
 
 ## Information architecture
-- Primary navigation: 我的工作、项目空间、团队态势、日历；系统管理仅管理员可见。
+- Primary navigation: 我的工作、项目空间、团队态势、日历；“执行进度 / 风险与卡点 / 人员负载”作为团队态势的明确子项；系统管理仅管理员可见。
 - Core routes/screens: `/my-work`, `/`, `/project/<id>`, `/task/<id>`, `/progress`, `/blockers`, `/people`, `/calendar`, `/users`.
 - Content hierarchy: 项目主线 → 目标分支 → 任务节点 → 方案/进展/操作记录。
 
@@ -36,7 +36,7 @@
 
 ## Visual language
 - Color: 中性蓝灰底色，蓝色作为主操作；红/橙/绿分别表达风险、临近和完成，并配合文字或图标。
-- Typography: 系统中文字体栈；正文 14–15px，页面标题 24–28px，数字指标使用更高字重。
+- Typography: 系统中文字体栈；页面标题 28px/850，区块标题 17–18px/800，卡片标题与一级导航 14–16px/700–800，正文 14–15px，说明和元数据 12–13px；相邻层级必须同时通过字号、字重和间距区分，不能只靠颜色。
 - Spacing/layout rhythm: 4px 基础单位；页面间距 24px；组件间距以 8/12/16/24px 为主。
 - Shape/radius/elevation: 8–12px 圆角，边框优先于阴影，最多两级阴影；所有操作按钮必须有可辨识的 1px 边界，主按钮使用实色填充，次按钮使用表面底色与强调边框。
 - Motion: 120–200ms，用于展开、悬停和抽屉；尊重 reduced-motion。
@@ -44,7 +44,7 @@
 
 ## Components
 - Existing components to reuse: Jinja 基础布局、CSRF 隐藏字段、Flash 消息、确认弹窗、任务卡片 partial、主/次级按钮及统一的“返回”按钮。
-- New/changed components: 应用侧栏、移动端顶部栏、页面标题栏、指标卡、状态徽章、风险提示、任务行、分支树、分段导航、空状态、详情侧栏、进展编辑器、等宽日历轨道与可截断日程条、统一描边操作按钮。
+- New/changed components: 应用侧栏、分区标题、一级导航、带引导线的二级导航、移动端分组导航、页面标题栏、指标卡、状态徽章、风险提示、任务行、分支树、分段导航、空状态、详情侧栏、进展编辑器、等宽日历轨道与可截断日程条、统一描边操作按钮。
 - Variants and states: default/hover/focus/active/disabled；pending/in_progress/completed；overdue/due-soon/stale/unassigned/unreviewed。
 - Token/component ownership: CSS 变量和通用组件统一放在 `webapp/static/style.css`；页面模板只组合组件，避免新增内联样式。
 
