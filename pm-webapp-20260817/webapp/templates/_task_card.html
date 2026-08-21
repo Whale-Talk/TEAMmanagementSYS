@@ -1,7 +1,11 @@
 {# _task_card.html - compact task row shared by project.html and my-work.html #}
-{% set can_update_task = current_user.can_edit_task(t) %}
+{% set branch_locked = t.goal and t.goal.status != 'active' %}
+{% set can_update_task = current_user.can_edit_task(t) and not branch_locked %}
 {% set is_stale = stale_task_ids is defined and t.id in stale_task_ids %}
+{% set is_checked_today = today_checked_task_ids is defined and t.id in today_checked_task_ids %}
+{% set is_daily_pending = daily_task_ids is defined and t.id in daily_task_ids %}
 {% set latest_progress = t.progress_logs[0] if t.progress_logs else none %}
+{% set last_checkin = t.last_checkin_at if t.last_checkin_at is defined and t.last_checkin_at else none %}
 {% set due_class = 'ok' %}
 {% set due_text = '未设截止' %}
 {% if t.due_date %}
@@ -23,7 +27,7 @@
     {% endif %}
 {% endif %}
 
-<article class="card task-item task-item-{{ t.status }}{% if t.is_overdue() %} task-item-overdue{% endif %}{% if is_stale %} task-item-stale{% endif %}">
+<article class="card task-item task-item-{{ t.status }}{% if t.is_overdue() %} task-item-overdue{% endif %}{% if is_stale %} task-item-stale{% endif %}{% if is_checked_today %} task-checkin-done{% elif is_daily_pending %} task-checkin-pending{% endif %}">
     <div class="task-item-main list-row">
         <div class="task-row-status">
             {% if can_update_task %}
@@ -32,11 +36,12 @@
                 <select id="status-{{ t.id }}" name="status" class="form-control" aria-label="任务状态" onchange="this.form.submit()">
                     <option value="pending" {% if t.status == 'pending' %}selected{% endif %}>待进行</option>
                     <option value="in_progress" {% if t.status == 'in_progress' %}selected{% endif %}>进行中</option>
+                    <option value="waiting" {% if t.status == 'waiting' %}selected{% endif %}>等待中</option>
                     <option value="completed" {% if t.status == 'completed' %}selected{% endif %}>已完成</option>
                 </select>
             </form>
             {% else %}
-            <span class="badge badge-{{ 'resolved' if t.status=='completed' else ('in-progress' if t.status=='in_progress' else 'pending') }}">{{ t.status_label() }}</span>
+            <span class="badge badge-{{ 'resolved' if t.status=='completed' else ('waiting' if t.status=='waiting' else ('in-progress' if t.status=='in_progress' else 'pending')) }}">{{ t.status_label() }}</span>
             {% endif %}
         </div>
 
@@ -52,9 +57,17 @@
                 {% if t.reviewer %}<span>验收: {{ t.reviewer.display_name }}</span>{% endif %}
                 {% if t.members.count() > 0 %}<span>成员: {{ t.members.count() }} 人</span>{% endif %}
             </div>
+            {% if t.status == 'waiting' or (t.waiting_reason is defined and t.waiting_reason) or (t.waiting_until is defined and t.waiting_until) %}
+            <div class="task-row-waiting">
+                <span class="badge badge-waiting">等待外部</span>
+                {% if t.waiting_reason is defined and t.waiting_reason %}<span>原因: {{ t.waiting_reason }}</span>{% endif %}
+                {% if t.waiting_until is defined and t.waiting_until %}<span>预计恢复: {{ t.waiting_until.strftime('%Y-%m-%d') }}</span>{% endif %}
+            </div>
+            {% endif %}
             <div class="task-row-progress">
                 {% if latest_progress %}
-                <span>最近进展: {{ latest_progress.content }}</span>
+                {% set latest_type = latest_progress.entry_type if latest_progress.entry_type is defined and latest_progress.entry_type else 'progress' %}
+                <span>最近{{ latest_progress.label() if latest_progress.label is defined else {'progress': '进展', 'no_progress': '无进展', 'waiting': '等待', 'resumed': '恢复'}.get(latest_type, '进展') }}: {{ latest_progress.content or '未填写补充说明' }}</span>
                 <span>{{ latest_progress.created_at|localdt_short }}</span>
                 {% elif t.last_progress_at %}
                 <span>最近进展已更新</span>
@@ -62,10 +75,18 @@
                 {% else %}
                 <span>尚未记录进展</span>
                 {% endif %}
+                {% if last_checkin %}
+                <span>上次打卡: {{ last_checkin|localdt_short }}</span>
+                {% endif %}
             </div>
         </div>
 
         <div class="task-row-signals">
+            {% if is_checked_today %}
+            <span class="badge badge-resolved">今日已更新</span>
+            {% elif is_daily_pending %}
+            <span class="badge badge-pending">今日待更新</span>
+            {% endif %}
             {% if is_stale and t.status != 'completed' %}
             <span class="badge badge-overdue">待更新</span>
             {% endif %}
@@ -78,8 +99,15 @@
     {% if can_update_task and t.status != 'completed' %}
     <form action="{{ url_for('task_progress', task_id=t.id) }}" method="post" class="task-inline-progress">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <textarea id="progress-{{ t.id }}" name="content" class="form-control" rows="2" placeholder="记录本次推进、阻塞或下一步" aria-label="记录进展" required></textarea>
-        <button type="submit" class="btn btn-primary btn-sm">记录进展</button>
+        <label class="sr-only" for="entry-type-{{ t.id }}">更新类型</label>
+        <select id="entry-type-{{ t.id }}" name="entry_type" class="form-control task-entry-type" aria-label="更新类型" onchange="if (window.updateCheckinContentState) updateCheckinContentState(this)">
+            <option value="progress">有进展</option>
+            <option value="no_progress">今日无进展</option>
+            <option value="waiting" {% if t.status == 'waiting' %}selected{% endif %}>等待外部</option>
+            <option value="resumed">恢复推进</option>
+        </select>
+        <textarea id="progress-{{ t.id }}" name="content" class="form-control task-checkin-content" rows="2" placeholder="记录本次推进、阻塞或下一步" aria-label="更新内容" required></textarea>
+        <button type="submit" class="btn btn-primary btn-sm">提交更新</button>
     </form>
     {% endif %}
 </article>

@@ -1339,9 +1339,12 @@ a {
     display: flex;
     flex: 1;
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
+    min-width: 0;
     gap: 16px;
     padding: 20px 14px;
+    overflow-x: hidden;
     overflow-y: auto;
     background: transparent;
     border: 0;
@@ -1350,7 +1353,10 @@ a {
 
 .nav-section {
     display: flex;
+    flex: 0 0 auto;
     flex-direction: column;
+    width: 100%;
+    min-width: 0;
     gap: 6px;
 }
 
@@ -2522,5 +2528,580 @@ a {
 
     .toolbar-field .form-control {
         width: 100%;
+    }
+}
+
+/* ========== Git-style task graph ========== */
+.graph-page-header {
+    align-items: flex-end;
+}
+
+.graph-scope-switch {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-soft);
+}
+
+.graph-scope-option {
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: var(--text-secondary);
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.graph-scope-option:hover,
+.graph-scope-option.active {
+    border-color: var(--border-strong);
+    background: var(--surface);
+    color: var(--primary);
+    box-shadow: var(--shadow);
+}
+
+.graph-toolbar {
+    margin-bottom: 14px;
+    padding: 14px;
+}
+
+.graph-filter-form {
+    display: flex;
+    align-items: end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.graph-search-field {
+    flex: 1 1 240px;
+}
+
+.graph-search-field .form-control {
+    width: 100%;
+}
+
+.graph-summary {
+    margin-bottom: 12px;
+}
+
+.graph-legend {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.graph-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.graph-legend-line {
+    width: 22px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--text-secondary);
+}
+
+.graph-legend-node {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--primary);
+    background: var(--surface);
+}
+
+.graph-legend-circle { border-radius: 50%; }
+.graph-legend-square { border-radius: 2px; }
+.graph-legend-diamond { transform: rotate(45deg); }
+
+.graph-legend-curve {
+    width: 24px;
+    height: 14px;
+    border-bottom: 3px solid var(--primary);
+    border-radius: 0 0 70% 30%;
+    transform: skewX(-28deg);
+}
+
+.graph-legend-halo {
+    width: 16px;
+    height: 16px;
+    border: 3px solid color-mix(in srgb, var(--primary) 32%, transparent);
+    border-radius: 50%;
+}
+
+.graph-project-list {
+    display: grid;
+    gap: 20px;
+}
+
+.git-graph-project {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    content-visibility: auto;
+    contain-intrinsic-size: 900px;
+}
+
+.git-graph-project-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--bg-soft), var(--surface));
+}
+
+.git-graph-project-header h2 {
+    margin: 5px 0 2px;
+    font-size: 20px;
+}
+
+.git-graph-project-header h2 a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.git-graph-project-header p,
+.git-graph-project-meta {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.git-graph-project-meta {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 7px 14px;
+}
+
+.graph-ref-row,
+.graph-badge-row,
+.graph-action-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.graph-ref {
+    padding: 2px 8px;
+    border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+    border-radius: 999px;
+    background: var(--primary-soft);
+    color: var(--primary-strong);
+    font: 700 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.graph-ref-main {
+    border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+    background: var(--success-soft);
+    color: var(--success-strong);
+}
+
+.git-graph-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    min-height: 420px;
+}
+
+.git-graph-viewport {
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
+    touch-action: pan-x pan-y;
+    border-right: 1px solid var(--border);
+    background-color: var(--bg-soft);
+    background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 28px 28px;
+    scrollbar-gutter: stable;
+}
+
+.git-graph {
+    display: block;
+    min-width: 980px;
+    font-family: inherit;
+}
+
+.graph-edge {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.graph-edge-trunk {
+    stroke-width: 5;
+}
+
+.graph-edge-fork,
+.graph-edge-merge {
+    stroke-width: 3.5;
+}
+
+.graph-edge-subbranch {
+    stroke-width: 2.75;
+}
+
+.graph-edge-task-fork {
+    opacity: .88;
+}
+
+.graph-edge-task-merge {
+    stroke-width: 3.25;
+}
+
+.graph-edge-merged {
+    opacity: .9;
+    stroke-dasharray: 10 5;
+}
+
+.graph-lane-main { color: var(--text-secondary); }
+.graph-lane-branch { color: var(--graph-lane-color, #2563eb); }
+.dark .graph-lane-branch { color: var(--graph-lane-color-dark, #60a5fa); }
+
+.graph-node {
+    color: inherit;
+    cursor: pointer;
+    outline: none;
+}
+
+.graph-scope-mine .graph-node:not(.is-mine) {
+    opacity: .46;
+}
+
+.graph-scope-mine .graph-node:not(.is-mine):hover,
+.graph-scope-mine .graph-node:not(.is-mine):focus-visible,
+.graph-scope-mine .graph-node:not(.is-mine).is-selected {
+    opacity: 1;
+}
+
+.graph-node-shape {
+    fill: var(--surface);
+    stroke: currentColor;
+    stroke-width: 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.graph-node-main {
+    fill: var(--text);
+    stroke: var(--surface);
+    stroke-width: 4;
+}
+
+.graph-node-main-commit {
+    fill: var(--surface);
+    stroke: var(--text-secondary);
+    stroke-width: 4;
+}
+
+.graph-node-branch-commit {
+    fill: currentColor;
+    stroke: var(--surface);
+    stroke-width: 3;
+}
+
+.graph-node-main-head {
+    fill: var(--primary);
+    stroke: var(--surface);
+    stroke-width: 4;
+}
+
+.graph-node-main-head-inner {
+    fill: var(--surface);
+}
+
+.graph-node-branch-head {
+    fill: currentColor;
+}
+
+.graph-node-task-join {
+    stroke-width: 3.5;
+}
+
+.graph-node-task-join-open {
+    fill: var(--surface);
+    stroke-dasharray: 3 2;
+}
+
+.graph-node-task-join-complete {
+    fill: var(--success-soft);
+    stroke: var(--success);
+}
+
+.graph-node-task-join-inner,
+.graph-node-task-join-progress {
+    fill: var(--success);
+}
+
+.graph-node-task-join-progress {
+    opacity: .72;
+}
+
+.graph-node-review,
+.graph-node-overdue {
+    fill: var(--warning-soft);
+    stroke: var(--danger);
+}
+
+.graph-node-waiting {
+    fill: var(--warning-soft);
+    stroke-dasharray: 3 2;
+}
+
+.graph-node-merged {
+    fill: var(--success-soft);
+    stroke: var(--success);
+}
+
+.graph-node-inner {
+    fill: var(--success);
+}
+
+.graph-node-unassigned {
+    fill: none;
+    stroke: var(--warning);
+    stroke-width: 2;
+    stroke-dasharray: 2 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.graph-my-halo {
+    fill: color-mix(in srgb, var(--primary) 10%, transparent);
+    stroke: color-mix(in srgb, var(--primary) 48%, transparent);
+    stroke-width: 5;
+    vector-effect: non-scaling-stroke;
+}
+
+.graph-node-label {
+    fill: var(--text);
+    font-size: 13px;
+    font-weight: 750;
+    paint-order: stroke;
+    stroke: var(--bg-soft);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+.graph-node-state {
+    fill: var(--text-secondary);
+    font-size: 10.5px;
+    paint-order: stroke;
+    stroke: var(--bg-soft);
+    stroke-width: 4px;
+}
+
+.graph-state-merged {
+    opacity: .72;
+}
+
+.graph-node:hover .graph-node-shape,
+.graph-node:focus-visible .graph-node-shape,
+.graph-node.is-selected .graph-node-shape {
+    stroke-width: 5;
+}
+
+.graph-node:focus-visible .graph-my-halo,
+.graph-node.is-selected .graph-my-halo {
+    stroke: var(--primary);
+    stroke-width: 7;
+}
+
+.graph-node:focus-visible .graph-node-label,
+.graph-node.is-selected .graph-node-label {
+    fill: var(--primary-strong);
+}
+
+.graph-inspector {
+    min-width: 0;
+    padding: 18px;
+    background: var(--surface);
+}
+
+.graph-inspector-panel {
+    display: grid;
+    gap: 13px;
+}
+
+.graph-inspector-panel[hidden] {
+    display: none;
+}
+
+.graph-inspector-panel h3 {
+    font-size: 18px;
+    line-height: 1.35;
+}
+
+.graph-inspector-panel > p,
+.graph-result p {
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+}
+
+.graph-inspector-titlebar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.graph-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.graph-facts div,
+.graph-result {
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-soft);
+}
+
+.graph-facts dt {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.graph-facts dd {
+    margin: 2px 0 0;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.graph-mine-badge {
+    border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+    background: var(--primary-soft);
+    color: var(--primary-strong);
+}
+
+.graph-action-stack,
+.graph-action-panel form {
+    display: grid;
+    gap: 9px;
+}
+
+.graph-action-panel {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+
+.graph-action-panel summary {
+    width: fit-content;
+    list-style: none;
+    cursor: pointer;
+}
+
+.graph-action-panel summary::-webkit-details-marker {
+    display: none;
+}
+
+.graph-status-active { background: var(--primary-soft); color: var(--primary-strong); }
+.graph-status-merge_requested { background: var(--warning-soft); color: var(--warning-strong); }
+.graph-status-merged { background: var(--success-soft); color: var(--success-strong); }
+
+.graph-accessible-fallback {
+    border-top: 1px solid var(--border);
+    background: var(--bg-soft);
+}
+
+.graph-accessible-fallback > summary {
+    min-height: 42px;
+    padding: 10px 20px;
+    color: var(--primary);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.graph-fallback-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    padding: 0 20px 18px;
+}
+
+.graph-fallback-list section {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.graph-fallback-list ul {
+    margin: 8px 0 0 18px;
+}
+
+.graph-empty-state {
+    padding: 40px 20px;
+    text-align: center;
+}
+
+@media (max-width: 1100px) {
+    .git-graph-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .git-graph-viewport {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+}
+
+@media (max-width: 700px) {
+    .graph-page-header {
+        align-items: stretch;
+    }
+
+    .graph-scope-switch,
+    .graph-scope-option {
+        width: 100%;
+    }
+
+    .graph-scope-option {
+        text-align: center;
+    }
+
+    .graph-filter-form,
+    .graph-filter-form .toolbar-field,
+    .graph-filter-form .form-control,
+    .graph-filter-form .btn {
+        width: 100%;
+    }
+
+    .git-graph-project-header,
+    .git-graph-project-meta {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .graph-inspector {
+        padding: 14px;
+    }
+
+    .graph-facts {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .graph-node,
+    .graph-scope-option {
+        transition: none !important;
     }
 }

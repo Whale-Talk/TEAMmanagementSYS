@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}管理目标分支 - {{ project.name }}{% endblock %}
+{% block title %}{{ '管理' if can_manage_project else '查看' }}目标分支 - {{ project.name }}{% endblock %}
 {% block content %}
 
 <div class="page-header branch-manage-header">
@@ -7,7 +7,7 @@
         <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-outline btn-sm back-button">
             <span aria-hidden="true">←</span><span class="back-button-label">返回项目：{{ project.name }}</span>
         </a>
-        <h1>管理目标分支</h1>
+        <h1>{{ '管理' if can_manage_project else '查看' }}目标分支</h1>
         <p class="page-subtitle">目标分支用于把任务节点挂到清晰的项目主线上。</p>
     </div>
 </div>
@@ -23,6 +23,8 @@
             <thead>
                 <tr>
                     <th>分支</th>
+                    <th>负责人 / 验收人</th>
+                    <th>状态 / 截止</th>
                     <th>为什么做</th>
                     <th>预期产出</th>
                     <th>操作</th>
@@ -32,15 +34,40 @@
                 {% for g in goals %}
                 <tr>
                     <td><strong>{{ g.title }}</strong></td>
+                    <td>
+                        <div>{{ g.owner.display_name if g.owner else '未指定负责人' }}</div>
+                        <div class="form-hint">验收：{{ g.reviewer.display_name if g.reviewer else '未指定' }}</div>
+                    </td>
+                    <td>
+                        <span class="badge tree-status-badge tree-status-{{ g.status }}">{{ g.status_label() }}</span>
+                        <div class="form-hint">{{ g.due_date.strftime('%Y-%m-%d') if g.due_date else '未设截止' }}</div>
+                    </td>
                     <td>{{ g.description or '未填写' }}</td>
                     <td>{{ g.deliverable or '未填写' }}</td>
                     <td>
                         <div class="row-actions">
-                            <button type="button" class="btn btn-outline btn-xs" data-edit-branch data-id="{{ g.id }}" data-title="{{ g.title|e }}" data-description="{{ (g.description or '')|e }}" data-deliverable="{{ (g.deliverable or '')|e }}">编辑</button>
+                            {% if g.status == 'active' and goal_permissions[g.id] %}
+                            <button type="button" class="btn btn-outline btn-xs" data-edit-branch
+                                data-id="{{ g.id }}"
+                                data-title="{{ g.title|e }}"
+                                data-description="{{ (g.description or '')|e }}"
+                                data-deliverable="{{ (g.deliverable or '')|e }}"
+                                data-owner-id="{{ g.owner_id or '' }}"
+                                data-reviewer-id="{{ g.reviewer_id or '' }}"
+                                data-start-date="{{ g.start_date.strftime('%Y-%m-%d') if g.start_date else '' }}"
+                                data-due-date="{{ g.due_date.strftime('%Y-%m-%d') if g.due_date else '' }}"
+                                data-member-ids="{{ g.members.all()|map(attribute='id')|join(',') }}">编辑</button>
+                            {% if can_manage_project %}
                             <form action="{{ url_for('goal_delete', goal_id=g.id) }}" method="post" data-confirm="删除目标分支「{{ g.title }}」？其下任务将变为未分组。">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-danger btn-xs">删除</button>
                             </form>
+                            {% endif %}
+                            {% elif g.status == 'active' %}
+                            <span class="form-hint">只读</span>
+                            {% else %}
+                            <span class="form-hint">待验收或已闭环分支需通过闭环流程处理</span>
+                            {% endif %}
                         </div>
                     </td>
                 </tr>
@@ -55,10 +82,12 @@
         {% endif %}
     </section>
 
-    <section class="card branch-form-card">
+    {% if can_manage_project or can_manage_any_goal %}
+    <section class="card branch-form-card" {% if not can_manage_project %}hidden{% endif %}>
         <div class="card-title" id="form-title">新建目标分支</div>
         <form id="goal-form" action="{{ url_for('goal_new', project_id=project.id) }}" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if can_manage_project %}<input type="hidden" name="members_present" value="1">{% endif %}
             <div class="form-group">
                 <label for="goal-title">分支名称 *</label>
                 <input type="text" name="title" id="goal-title" class="form-control" required>
@@ -71,12 +100,58 @@
                 <label for="goal-deliverable">预期产出</label>
                 <textarea name="deliverable" id="goal-deliverable" class="form-control" rows="3"></textarea>
             </div>
+            {% if can_manage_project %}
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="goal-owner">负责人</label>
+                    <select name="owner_id" id="goal-owner" class="form-control">
+                        <option value="">默认项目负责人</option>
+                        {% for u in users %}
+                        <option value="{{ u.id }}">{{ u.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="goal-reviewer">验收人</label>
+                    <select name="reviewer_id" id="goal-reviewer" class="form-control">
+                        <option value="">默认项目负责人</option>
+                        {% for u in users %}
+                        <option value="{{ u.id }}">{{ u.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            {% endif %}
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="goal-start-date">开始日期</label>
+                    <input type="date" name="start_date" id="goal-start-date" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="goal-due-date">截止日期</label>
+                    <input type="date" name="due_date" id="goal-due-date" class="form-control">
+                </div>
+            </div>
+            {% if can_manage_project %}
+            <div class="form-group">
+                <label>参与成员</label>
+                <div class="member-picker" id="goal-members">
+                    {% for u in users %}
+                    <label class="member-option">
+                        <input type="checkbox" name="members" value="{{ u.id }}">
+                        <span>{{ u.display_name }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
             <div class="form-actions">
-                <button type="submit" class="btn btn-primary" id="goal-submit">添加目标分支</button>
+                <button type="submit" class="btn btn-primary" id="goal-submit">{{ '添加目标分支' if can_manage_project else '保存修改' }}</button>
                 <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-outline">返回项目</a>
             </div>
         </form>
     </section>
+    {% endif %}
 </div>
 
 <style>
@@ -118,8 +193,19 @@
         document.getElementById('goal-title').value = button.getAttribute('data-title') || '';
         document.getElementById('goal-desc').value = button.getAttribute('data-description') || '';
         document.getElementById('goal-deliverable').value = button.getAttribute('data-deliverable') || '';
+        var owner = document.getElementById('goal-owner');
+        var reviewer = document.getElementById('goal-reviewer');
+        if (owner) owner.value = button.getAttribute('data-owner-id') || '';
+        if (reviewer) reviewer.value = button.getAttribute('data-reviewer-id') || '';
+        document.getElementById('goal-start-date').value = button.getAttribute('data-start-date') || '';
+        document.getElementById('goal-due-date').value = button.getAttribute('data-due-date') || '';
+        var memberIds = (button.getAttribute('data-member-ids') || '').split(',').filter(Boolean);
+        document.querySelectorAll('#goal-members input[name="members"]').forEach(function (input) {
+            input.checked = memberIds.indexOf(input.value) !== -1;
+        });
         document.getElementById('goal-form').action = '/goal/' + button.getAttribute('data-id') + '/edit';
         document.getElementById('goal-submit').textContent = '保存修改';
+        document.querySelector('.branch-form-card').hidden = false;
         document.getElementById('goal-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 })();

@@ -20,10 +20,13 @@
         <h1>{{ project.name }}</h1>
     </div>
     <div class="project-detail-actions">
-        <a href="{{ url_for('task_new', project_id=project.id) }}" class="btn btn-primary btn-sm">新建任务</a>
+        <a href="{{ url_for('task_tree', project_id=project.id) }}" class="btn btn-outline btn-sm">打开任务树</a>
         {% if current_user.can_manage_project(project) %}
+        <a href="{{ url_for('task_new', project_id=project.id) }}" class="btn btn-primary btn-sm">新建任务</a>
         <a href="{{ url_for('project_edit', project_id=project.id) }}" class="btn btn-outline btn-sm">编辑项目</a>
         <a href="{{ url_for('goal_manage', project_id=project.id) }}" class="btn btn-outline btn-sm">管理目标分支</a>
+        {% else %}
+        <a href="{{ url_for('goal_manage', project_id=project.id) }}" class="btn btn-outline btn-sm">查看目标分支</a>
         {% endif %}
     </div>
 </div>
@@ -59,7 +62,7 @@
     </div>
 
     <div class="project-health-row" aria-label="项目关键指标">
-        <div><strong>{{ project.progress_pct() }}%</strong><span>整体进度</span></div>
+        <div><strong>{{ project_stats.progress_pct }}%</strong><span>可见任务进度</span></div>
         <div><strong>{{ open_count }}</strong><span>未完成任务</span></div>
         <div><strong>{{ completed_count }}</strong><span>已完成任务</span></div>
         <div><strong>{{ risk.overdue }}</strong><span>逾期任务</span></div>
@@ -77,21 +80,32 @@
 </details>
 {% endif %}
 
+{% macro branch_status_badge(g, branch=none) %}
+{% set status = g.status|default('active') %}
+<span class="badge tree-status-badge tree-status-{{ status }}">
+    {% if status == 'merged' %}已合并回主线{% elif status == 'merge_requested' %}待验收{% elif branch and branch.can_request_merge %}等待申请闭环{% else %}推进中{% endif %}
+</span>
+{% endmacro %}
+
 {% macro task_node(t) %}
-<article class="task-tree-node {% if t.is_overdue() %}task-tree-node-risk{% endif %}">
+<article class="tree-task-node {% if t.is_overdue() %}tree-task-node-risk{% endif %}">
+    <div class="tree-node-line" aria-hidden="true"></div>
     <div class="task-node-status">
-        {% if current_user.can_manage_project(t.project) or current_user.id == t.assignee_id %}
+        {% if current_user.can_log_task_progress(t) and (not t.goal or t.goal.status == 'active') %}
         <form action="{{ url_for('task_quick_status', task_id=t.id) }}" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label class="sr-only" for="task-status-{{ t.id }}">任务状态</label>
             <select id="task-status-{{ t.id }}" name="status" class="form-control task-status-select" data-autosubmit>
                 <option value="pending" {% if t.status == 'pending' %}selected{% endif %}>待进行</option>
                 <option value="in_progress" {% if t.status == 'in_progress' %}selected{% endif %}>进行中</option>
+                <option value="waiting" {% if t.status == 'waiting' %}selected{% endif %}>等待中</option>
                 <option value="completed" {% if t.status == 'completed' %}selected{% endif %}>已完成</option>
             </select>
         </form>
         {% else %}
-        <span class="badge badge-{{ 'resolved' if t.status == 'completed' else ('in-progress' if t.status == 'in_progress' else 'pending') }}">{{ t.status_label() }}</span>
+        <span class="badge badge-{{ 'resolved' if t.status == 'completed' else ('in-progress' if t.status == 'in_progress' else ('medium' if t.status == 'waiting' else 'pending')) }}">
+            {% if t.status_label is defined %}{{ t.status_label() }}{% elif t.status == 'waiting' %}等待中{% else %}{{ t.status }}{% endif %}
+        </span>
         {% endif %}
     </div>
 
@@ -102,6 +116,7 @@
             {% if t.reviewer %}<span>验收人：{{ t.reviewer.display_name }}</span>{% endif %}
             {% if t.members.count() > 0 %}<span>参与：{{ t.members.count() }} 人</span>{% endif %}
             {% if stale_task_ids is defined and t.id in stale_task_ids %}<span class="badge badge-overdue">超过 3 天未推进</span>{% endif %}
+            {% if t.waiting_reason %}<span class="tree-waiting-badge">等待：{{ t.waiting_reason }}</span>{% endif %}
             {% if t.due_date %}
             {% set days_left = (t.due_date - today).days %}
             <span class="due-chip {% if days_left < 0 %}overdue{% elif days_left <= 1 %}soon{% elif days_left <= 3 %}near{% else %}ok{% endif %}">
@@ -114,26 +129,124 @@
 </article>
 {% endmacro %}
 
-<section class="branch-tree" aria-label="项目树">
-    <div class="tree-root">
-        <span class="tree-node-dot"></span>
+{% macro branch_actions(branch) %}
+{% set goal = branch.goal %}
+<div class="tree-branch-actions" aria-label="分支闭环操作">
+    {% if branch.can_request_merge %}
+    <details class="tree-action-panel">
+        <summary class="btn btn-outline btn-sm">申请闭环</summary>
+        <form action="{{ url_for('goal_merge_request', goal_id=goal.id) }}" method="post" class="tree-action-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="project-actual-result-{{ goal.id }}">实际结果 *</label>
+            <textarea id="project-actual-result-{{ goal.id }}" name="actual_result" class="form-control" rows="3" required>{{ goal.actual_result or '' }}</textarea>
+            <label for="project-result-type-{{ goal.id }}">结果类型</label>
+            <select id="project-result-type-{{ goal.id }}" name="result_type" class="form-control">
+                <option value="achieved" {% if goal.result_type == 'achieved' %}selected{% endif %}>达成</option>
+                <option value="answered" {% if goal.result_type == 'answered' %}selected{% endif %}>已回答</option>
+                <option value="cancelled" {% if goal.result_type == 'cancelled' %}selected{% endif %}>取消</option>
+                <option value="transferred" {% if goal.result_type == 'transferred' %}selected{% endif %}>转交</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">提交闭环申请</button>
+        </form>
+    </details>
+    {% endif %}
+    {% if branch.can_review %}
+    <details class="tree-action-panel">
+        <summary class="btn btn-outline btn-sm">验收闭环</summary>
+        <form action="{{ url_for('goal_merge_review', goal_id=goal.id) }}" method="post" class="tree-action-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="project-review-note-{{ goal.id }}">验收备注</label>
+            <textarea id="project-review-note-{{ goal.id }}" name="merge_note" class="form-control" rows="3"></textarea>
+            <div class="tree-action-row">
+                <button type="submit" name="decision" value="approve" class="btn btn-success btn-sm">通过并合并</button>
+                <button type="submit" name="decision" value="reject" class="btn btn-outline btn-sm">驳回继续推进</button>
+            </div>
+        </form>
+    </details>
+    {% endif %}
+    {% if branch.can_reopen %}
+    <details class="tree-action-panel">
+        <summary class="btn btn-outline btn-sm">重新打开</summary>
+        <form action="{{ url_for('goal_reopen', goal_id=goal.id) }}" method="post" class="tree-action-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="project-reopen-reason-{{ goal.id }}">重开原因</label>
+            <textarea id="project-reopen-reason-{{ goal.id }}" name="reason" class="form-control" rows="2" required></textarea>
+            <button type="submit" class="btn btn-warning btn-sm">重开分支</button>
+        </form>
+    </details>
+    {% endif %}
+</div>
+{% endmacro %}
+
+<section class="branch-tree closure-map project-closure-map" aria-label="项目树">
+    <div class="tree-root tree-mainline">
+        <span class="tree-mainline-dot" aria-hidden="true"></span>
         <div>
             <div class="eyebrow">项目主线</div>
             <strong>{{ project.name }}</strong>
         </div>
     </div>
 
-    {% if tasks %}
+    {% if branches is defined and branches %}
+        {% for branch in branches %}
+            {% set g = branch.goal %}
+            {% set branch_tasks = branch.tasks %}
+            <section class="branch-group tree-branch tree-branch-{{ g.status|default('active') }}">
+                <div class="branch-header tree-branch-header">
+                    <span class="tree-node-dot" aria-hidden="true"></span>
+                    <div class="tree-branch-title">
+                        <div class="eyebrow">目标分支</div>
+                        <h2>{{ g.title }}</h2>
+                        <p>{{ g.description or g.deliverable or '未填写分支说明。' }}</p>
+                    </div>
+                    <div class="tree-branch-state">
+                        {{ branch_status_badge(g, branch) }}
+                        <span class="badge badge-discussing">{{ branch_tasks|length }} 个任务节点</span>
+                        {% if branch.risk_count %}<span class="badge badge-overdue">风险 {{ branch.risk_count }}</span>{% endif %}
+                    </div>
+                </div>
+                <div class="tree-branch-facts">
+                    <span>负责人：{{ g.owner.display_name if g.owner else '未指定' }}</span>
+                    <span>验收人：{{ g.reviewer.display_name if g.reviewer else '未指定' }}</span>
+                    {% if g.start_date or g.due_date %}<span>周期：{{ g.start_date.strftime('%Y-%m-%d') if g.start_date else '未指定' }} 至 {{ g.due_date.strftime('%Y-%m-%d') if g.due_date else '未指定' }}</span>{% endif %}
+                    {% if g.actual_result %}<span>实际结果：{{ g.actual_result }}</span>{% endif %}
+                </div>
+                <div class="task-node-list tree-task-list">
+                    {% for t in branch_tasks %}{{ task_node(t) }}{% endfor %}
+                </div>
+                <footer class="tree-merge-endpoint">
+                    <span class="tree-endpoint-label">{% if g.status == 'merged' %}已合并回主线{% elif g.status == 'merge_requested' %}待验收{% elif branch.can_request_merge %}等待申请闭环{% else %}推进中{% endif %}</span>
+                    {{ branch_actions(branch) }}
+                </footer>
+            </section>
+        {% endfor %}
+        {% if ungrouped_tasks is defined and ungrouped_tasks %}
+        <section class="branch-group branch-group-muted tree-branch tree-branch-muted">
+            <div class="branch-header tree-branch-header">
+                <span class="tree-node-dot" aria-hidden="true"></span>
+                <div class="tree-branch-title">
+                    <div class="eyebrow">未分组任务</div>
+                    <h2>未挂接目标分支</h2>
+                    <p>这些任务节点还没有挂到明确的目标分支。</p>
+                </div>
+                <span class="badge badge-pending">{{ ungrouped_tasks|length }} 个任务节点</span>
+            </div>
+            <div class="task-node-list tree-task-list">
+                {% for t in ungrouped_tasks %}{{ task_node(t) }}{% endfor %}
+            </div>
+        </section>
+        {% endif %}
+    {% elif tasks %}
         {% for g in goals %}
             {% if g.id in tasks_by_goal %}
             {% set branch_tasks = tasks_by_goal[g.id] %}
             {% set in_progress_tasks = branch_tasks|selectattr('status','equalto','in_progress')|list %}
             {% set pending_tasks = branch_tasks|selectattr('status','equalto','pending')|list %}
             {% set completed_tasks = branch_tasks|selectattr('status','equalto','completed')|list %}
-            <section class="branch-group">
-                <div class="branch-header">
-                    <span class="tree-node-dot"></span>
-                    <div>
+            <section class="branch-group tree-branch tree-branch-{{ g.status|default('active') }}">
+                <div class="branch-header tree-branch-header">
+                    <span class="tree-node-dot" aria-hidden="true"></span>
+                    <div class="tree-branch-title">
                         <div class="eyebrow">目标分支</div>
                         <h2>{{ g.title }}</h2>
                         {% if g.description or g.deliverable %}
@@ -144,10 +257,18 @@
                         </p>
                         {% endif %}
                     </div>
-                    <span class="badge badge-discussing">{{ branch_tasks|length }} 个任务节点</span>
+                    <div class="tree-branch-state">
+                        {{ branch_status_badge(g) }}
+                        <span class="badge badge-discussing">{{ branch_tasks|length }} 个任务节点</span>
+                    </div>
+                </div>
+                <div class="tree-branch-facts">
+                    <span>负责人：{{ g.owner.display_name if g.owner else '未指定' }}</span>
+                    <span>验收人：{{ g.reviewer.display_name if g.reviewer else '未指定' }}</span>
+                    {% if g.start_date or g.due_date %}<span>周期：{{ g.start_date.strftime('%Y-%m-%d') if g.start_date else '未指定' }} 至 {{ g.due_date.strftime('%Y-%m-%d') if g.due_date else '未指定' }}</span>{% endif %}
                 </div>
 
-                <div class="task-node-list">
+                <div class="task-node-list tree-task-list">
                     {% for t in in_progress_tasks %}
                     {{ task_node(t) }}
                     {% endfor %}
@@ -166,6 +287,9 @@
                     </details>
                     {% endif %}
                 </div>
+                <footer class="tree-merge-endpoint">
+                    <span class="tree-endpoint-label">{% if g.status == 'merged' %}已合并回主线{% elif g.status == 'merge_requested' %}待验收{% else %}推进中{% endif %}</span>
+                </footer>
             </section>
             {% endif %}
         {% endfor %}
@@ -175,17 +299,17 @@
         {% set in_progress_tasks = branch_tasks|selectattr('status','equalto','in_progress')|list %}
         {% set pending_tasks = branch_tasks|selectattr('status','equalto','pending')|list %}
         {% set completed_tasks = branch_tasks|selectattr('status','equalto','completed')|list %}
-        <section class="branch-group branch-group-muted">
-            <div class="branch-header">
-                <span class="tree-node-dot"></span>
-                <div>
-                    <div class="eyebrow">目标分支</div>
+        <section class="branch-group branch-group-muted tree-branch tree-branch-muted">
+            <div class="branch-header tree-branch-header">
+                <span class="tree-node-dot" aria-hidden="true"></span>
+                <div class="tree-branch-title">
+                    <div class="eyebrow">未分组任务</div>
                     <h2>未分组</h2>
                     <p>这些任务节点还没有挂到明确的目标分支。</p>
                 </div>
                 <span class="badge badge-pending">{{ branch_tasks|length }} 个任务节点</span>
             </div>
-            <div class="task-node-list">
+            <div class="task-node-list tree-task-list">
                 {% for t in in_progress_tasks %}{{ task_node(t) }}{% endfor %}
                 {% if pending_tasks %}
                 <details class="task-status-group">
@@ -225,199 +349,6 @@
     </div>
 </details>
 {% endif %}
-
-<style>
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-}
-.project-detail-actions {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-.eyebrow {
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-.section-title {
-    font-size: 20px;
-    margin-top: 2px;
-}
-.project-brief-grid {
-    display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.project-brief-grid strong {
-    color: var(--text-secondary);
-    display: block;
-    font-size: 13px;
-    margin-bottom: 4px;
-}
-.project-brief-grid p {
-    line-height: 1.7;
-}
-.project-health-row {
-    border-top: 1px solid var(--border);
-    display: grid;
-    gap: 8px;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    margin-top: 18px;
-    padding-top: 16px;
-}
-.project-health-row div {
-    background: var(--bg-soft);
-    border-radius: 8px;
-    padding: 10px;
-}
-.project-health-row strong {
-    display: block;
-    font-size: 20px;
-}
-.project-health-row span {
-    color: var(--text-secondary);
-    display: block;
-    font-size: 12px;
-}
-.admin-danger-zone {
-    color: var(--text-secondary);
-    margin: -4px 0 16px;
-}
-.admin-danger-zone summary {
-    cursor: pointer;
-    font-size: 13px;
-    margin-bottom: 8px;
-}
-.branch-tree {
-    margin-top: 18px;
-}
-.tree-root,
-.branch-header,
-.task-tree-node {
-    display: flex;
-    gap: 12px;
-    position: relative;
-}
-.tree-root {
-    align-items: center;
-    margin-bottom: 10px;
-}
-.tree-node-dot {
-    background: var(--primary);
-    border-radius: 999px;
-    flex: 0 0 10px;
-    height: 10px;
-    margin-top: 8px;
-    width: 10px;
-}
-.branch-group {
-    border-left: 2px solid var(--border);
-    margin-left: 4px;
-    padding: 0 0 18px 22px;
-}
-.branch-group-muted {
-    border-left-style: dashed;
-}
-.branch-header {
-    align-items: flex-start;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    justify-content: space-between;
-    margin-bottom: 8px;
-    padding: 14px;
-}
-.branch-header h2 {
-    font-size: 18px;
-    margin: 2px 0 4px;
-}
-.branch-header p {
-    color: var(--text-secondary);
-    font-size: 14px;
-    line-height: 1.6;
-}
-.task-node-list {
-    border-left: 1px solid var(--border);
-    margin-left: 18px;
-    padding-left: 18px;
-}
-.task-tree-node {
-    align-items: flex-start;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    margin: 8px 0;
-    padding: 10px 12px;
-}
-.task-tree-node-risk {
-    border-color: var(--danger);
-}
-.task-node-status {
-    flex: 0 0 112px;
-}
-.task-status-select {
-    min-height: auto;
-    padding: 4px 8px;
-}
-.task-node-body {
-    flex: 1;
-    min-width: 0;
-}
-.task-node-title {
-    color: var(--text);
-    font-size: 15px;
-    font-weight: 700;
-    text-decoration: none;
-}
-.task-node-title-done {
-    opacity: 0.65;
-    text-decoration: line-through;
-}
-.task-node-meta {
-    align-items: center;
-    color: var(--text-secondary);
-    display: flex;
-    flex-wrap: wrap;
-    font-size: 13px;
-    gap: 8px;
-    margin-top: 6px;
-}
-.task-status-group {
-    margin: 8px 0;
-}
-.task-status-group summary,
-.activity-log summary {
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 700;
-}
-.activity-log {
-    margin-top: 24px;
-}
-@media (max-width: 768px) {
-    .project-brief-grid,
-    .project-health-row {
-        grid-template-columns: 1fr;
-    }
-    .branch-group {
-        padding-left: 14px;
-    }
-    .task-node-list {
-        margin-left: 10px;
-        padding-left: 12px;
-    }
-    .task-tree-node {
-        display: block;
-    }
     .task-node-status {
         margin-bottom: 8px;
     }

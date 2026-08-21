@@ -40,6 +40,10 @@
                         <span class="nav-icon" aria-hidden="true">项</span>
                         <span>项目空间</span>
                     </a>
+                    <a href="{{ url_for('task_tree') }}" class="nav-link {% if request.endpoint == 'task_tree' %}active{% endif %}" {% if request.endpoint == 'task_tree' %}aria-current="page"{% endif %}>
+                        <span class="nav-icon" aria-hidden="true">树</span>
+                        <span>任务树</span>
+                    </a>
                     <div class="nav-subgroup {% if request.endpoint in ['progress', 'blockers', 'people'] %}active{% endif %}" aria-labelledby="team-status-nav-title">
                         <div class="nav-parent-label" id="team-status-nav-title">
                             <span class="nav-parent-icon" aria-hidden="true">态</span>
@@ -104,6 +108,7 @@
                     <a href="{{ url_for('my_work') }}" class="{% if request.endpoint == 'my_work' %}active{% endif %}">我的工作</a>
                     <span class="mobile-nav-section-title">项目协作</span>
                     <a href="{{ url_for('index') }}" class="{% if request.endpoint in ['index', 'project_view', 'project_new', 'project_edit', 'goal_manage', 'task_new', 'task_view', 'task_edit'] %}active{% endif %}">项目空间</a>
+                    <a href="{{ url_for('task_tree') }}" class="{% if request.endpoint == 'task_tree' %}active{% endif %}" {% if request.endpoint == 'task_tree' %}aria-current="page"{% endif %}>任务树</a>
                     <span class="mobile-nav-parent-label {% if request.endpoint in ['progress', 'blockers', 'people'] %}active{% endif %}">团队态势</span>
                     <a href="{{ url_for('progress') }}" class="mobile-nav-sub {% if request.endpoint == 'progress' %}active{% endif %}">执行进度</a>
                     <a href="{{ url_for('blockers') }}" class="mobile-nav-sub {% if request.endpoint == 'blockers' %}active{% endif %}">风险与卡点</a>

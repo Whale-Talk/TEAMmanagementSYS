@@ -10,7 +10,11 @@
     {{- ns.count -}}
 {%- endmacro %}
 
-{% macro task_group(title, tasks, relation, default_open=True) %}
+{% set daily_tasks = daily_pending_tasks if daily_pending_tasks is defined else [] %}
+{% set daily_task_ids = daily_tasks|map(attribute='id')|list %}
+{% set checked_task_ids = today_checked_task_ids if today_checked_task_ids is defined else [] %}
+
+{% macro task_group(title, tasks, relation, default_open=True, excluded_task_ids=[]) %}
     {% if tasks %}
     {% set group_id = 'mw-' ~ relation %}
     <section class="card work-section action-section">
@@ -22,8 +26,10 @@
             {% set completed_tasks = tasks|selectattr('status','equalto','completed')|list %}
             {% if active_tasks %}
                 {% for t in active_tasks %}
+                    {% if t.id not in excluded_task_ids %}
                     {% set task_relation = title %}
                     {% include "_task_card.html" %}
+                    {% endif %}
                 {% endfor %}
             {% endif %}
             {% if completed_tasks %}
@@ -49,6 +55,30 @@
     </div>
 </div>
 
+<section class="card work-section daily-checkin-section action-section">
+    <div class="card-header">
+        <div>
+            <div class="card-title">今日待更新</div>
+            <p class="page-subtitle">用一次打卡说明今天的推进、无进展、等待外部或恢复推进。</p>
+        </div>
+        <span class="badge badge-pending">{{ daily_tasks|length }}</span>
+    </div>
+    <div class="daily-checkin-summary">
+        <span class="badge badge-resolved">今日已更新 {{ checked_task_ids|length }}</span>
+        <span class="badge badge-pending">仍待更新 {{ daily_tasks|length }}</span>
+    </div>
+    {% if daily_tasks %}
+        {% for t in daily_tasks %}
+            {% set task_relation = '今日待更新' %}
+            {% include "_task_card.html" %}
+        {% endfor %}
+    {% else %}
+    <div class="empty-state">
+        <p>今天没有待更新任务。</p>
+    </div>
+    {% endif %}
+</section>
+
 <section class="work-focus-grid grid-2">
     <div class="card work-focus-card">
         <div class="card-header">
@@ -58,7 +88,7 @@
         <div class="work-signal-list">
             {% set action_ns = namespace(count=0) %}
             {% for t in my_assigned %}
-                {% if t.status != 'completed' and (t.is_overdue() or (t.due_date and (t.due_date - today).days <= 3) or (t.id in stale_task_ids) or t.status == 'in_progress') %}
+                {% if t.id not in daily_task_ids and t.status != 'completed' and (t.is_overdue() or (t.due_date and (t.due_date - today).days <= 3) or (t.id in stale_task_ids) or t.status == 'in_progress') %}
                     {% set action_ns.count = action_ns.count + 1 %}
                     {% set task_relation = '我负责' %}
                     {% include "_task_card.html" %}
@@ -105,8 +135,8 @@
     </div>
 </section>
 
-{{ task_group('我负责', my_assigned, 'assigned', True) }}
-{{ task_group('我参与', my_member, 'member', True) }}
+{{ task_group('我负责', my_assigned, 'assigned', True, daily_task_ids) }}
+{{ task_group('我参与', my_member, 'member', True, daily_task_ids) }}
 {{ task_group('我验收', my_reviewed, 'reviewed', False) }}
 
 {% if my_projects or involved_projects %}
@@ -163,5 +193,27 @@ function toggleCollapse(id, btn) {
     var text = btn.textContent.trim();
     btn.textContent = isHidden ? text.replace('▶', '▼') : text.replace('▼', '▶');
 }
+
+function updateCheckinContentState(select) {
+    var form = select.form;
+    if (!form) return;
+    var content = form.querySelector('.task-checkin-content');
+    if (!content) return;
+    var needsContent = select.value === 'progress' || select.value === 'waiting';
+    content.required = needsContent;
+    if (select.value === 'progress') {
+        content.placeholder = '写明今天推进了什么、产出了什么';
+    } else if (select.value === 'waiting') {
+        content.placeholder = '写明等待对象、原因和预计恢复条件';
+    } else if (select.value === 'no_progress') {
+        content.placeholder = '可选：说明今天无进展的原因';
+    } else {
+        content.placeholder = '可选：说明已恢复推进的上下文';
+    }
+}
+
+document.querySelectorAll('.task-entry-type').forEach(function(select) {
+    updateCheckinContentState(select);
+});
 </script>
 {% endblock %}

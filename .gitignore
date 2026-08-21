@@ -9,6 +9,7 @@ htmlcov/
 # Local configuration and state
 .env
 database.db
+database.db.bak-*
 *.db-wal
 *.db-shm
 instance/

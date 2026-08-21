@@ -3,9 +3,11 @@
 {% block content %}
 
 {% set project = task.project %}
-{% set can_update_task = current_user.can_edit_task(task) %}
-{% set can_update_solution = current_user.can_manage_project(project) or current_user.id == task.assignee_id %}
+{% set branch_locked = task.goal and task.goal.status != 'active' %}
+{% set can_update_task = current_user.can_edit_task(task) and not branch_locked %}
+{% set can_update_solution = (current_user.can_manage_project(project) or current_user.id == task.assignee_id) and not branch_locked %}
 {% set latest_progress = task.progress_logs[0] if task.progress_logs else none %}
+{% set last_checkin = task.last_checkin_at if task.last_checkin_at is defined and task.last_checkin_at else none %}
 {% set due_class = 'ok' %}
 {% set due_text = '未设截止日期' %}
 {% if task.due_date %}
@@ -34,16 +36,18 @@
         </a>
         <h1>{{ task.title }}</h1>
         <div class="task-title-meta">
-            <span class="badge badge-{{ 'resolved' if task.status=='completed' else ('in-progress' if task.status=='in_progress' else 'pending') }}">{{ task.status_label() }}</span>
+            <span class="badge badge-{{ 'resolved' if task.status=='completed' else ('waiting' if task.status=='waiting' else ('in-progress' if task.status=='in_progress' else 'pending')) }}">{{ task.status_label() }}</span>
             <span class="due-chip {{ due_class }}">{{ due_text }}</span>
-            {% if task.goal %}<span class="badge badge-medium">目标分支: {{ task.goal.title }}</span>{% endif %}
+            {% if task.goal %}
+            <a href="{{ url_for('goal_manage', project_id=project.id) }}" class="badge badge-medium">目标分支: {{ task.goal.title }}</a>
+            {% endif %}
         </div>
     </div>
     <div class="task-page-actions">
         {% if can_update_task %}
         <a href="{{ url_for('task_edit', task_id=task.id) }}" class="btn btn-outline btn-sm">编辑任务</a>
         {% endif %}
-        {% if current_user.can_manage_project(project) or current_user.id == task.submitter_id %}
+        {% if not branch_locked and current_user.can_manage_project(project) %}
         <form action="{{ url_for('task_delete', task_id=task.id) }}" method="post" data-confirm="确定删除此任务？">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="btn btn-danger btn-sm">删除</button>
@@ -63,12 +67,31 @@
                 <div class="list-row"><strong>负责人</strong><span>{{ task.assignee.display_name if task.assignee else '未指定' }}</span></div>
                 <div class="list-row"><strong>验收人</strong><span>{{ task.reviewer.display_name if task.reviewer else '未指定' }}</span></div>
                 <div class="list-row"><strong>提交人</strong><span>{{ task.submitter.display_name if task.submitter else '系统' }}</span></div>
+                <div class="list-row"><strong>开始日期</strong><span>{% if task.start_date %}{{ task.start_date.strftime('%Y-%m-%d') }}{% else %}未设置{% endif %}</span></div>
                 <div class="list-row"><strong>截止日期</strong><span>{% if task.due_date %}{{ task.due_date.strftime('%Y-%m-%d') }}{% else %}未设置{% endif %}</span></div>
+                <div class="list-row"><strong>上次打卡</strong><span>{% if last_checkin %}{{ last_checkin|localdt }}{% else %}尚未打卡{% endif %}</span></div>
                 {% if task.completed_at %}<div class="list-row"><strong>完成时间</strong><span>{{ task.completed_at|localdt }}</span></div>{% endif %}
                 {% if task.members.count() > 0 %}
                 <div class="list-row"><strong>参与成员</strong><span>{% for m in task.members %}{{ m.display_name }}{% if not loop.last %}、{% endif %}{% endfor %}</span></div>
                 {% endif %}
+                {% if task.goal %}
+                <div class="list-row">
+                    <strong>目标分支状态</strong>
+                    <span>
+                        <a href="{{ url_for('goal_manage', project_id=project.id) }}">{{ task.goal.status_label() }}</a>
+                        {% if task.goal.merge_requested_at %} · 申请闭环 {{ task.goal.merge_requested_at|localdt_short }}{% endif %}
+                        {% if task.goal.merged_at %} · 已闭环 {{ task.goal.merged_at|localdt_short }}{% endif %}
+                    </span>
+                </div>
+                {% endif %}
             </div>
+            {% if task.status == 'waiting' or task.waiting_reason or task.waiting_until %}
+            <div class="task-copy-block task-waiting-detail">
+                <h2>等待状态</h2>
+                <p>{% if task.waiting_reason %}{{ task.waiting_reason }}{% else %}已标记等待外部，尚未填写原因。{% endif %}</p>
+                {% if task.waiting_until %}<p class="form-hint">预计恢复：{{ task.waiting_until.strftime('%Y-%m-%d') }}</p>{% endif %}
+            </div>
+            {% endif %}
             {% if task.description %}
             <div class="task-copy-block">
                 <h2>为什么做</h2>
@@ -118,10 +141,13 @@
                 {% for pl in task.progress_logs[:10] %}
                 <div class="list-row timeline-item">
                     <div>
+                        {% set progress_type = pl.entry_type if pl.entry_type is defined and pl.entry_type else 'progress' %}
                         <strong>{{ pl.user.display_name }}</strong>
+                        <span class="badge badge-{{ 'waiting' if progress_type == 'waiting' else ('resolved' if progress_type == 'resumed' else ('pending' if progress_type == 'no_progress' else 'in-progress')) }}">{{ pl.label() if pl.label is defined else {'progress': '有进展', 'no_progress': '今日无进展', 'waiting': '等待外部', 'resumed': '恢复推进'}.get(progress_type, '有进展') }}</span>
                         <span>{{ pl.created_at|localdt_short }}</span>
+                        {% if pl.checkin_date is defined and pl.checkin_date %}<span>打卡日 {{ pl.checkin_date.strftime('%Y-%m-%d') }}</span>{% endif %}
                     </div>
-                    <p>{{ pl.content }}</p>
+                    <p>{{ pl.content or '未填写补充说明' }}</p>
                 </div>
                 {% endfor %}
             </div>
@@ -144,6 +170,7 @@
                     <select name="status" id="status" class="form-control">
                         <option value="pending" {% if task.status == 'pending' %}selected{% endif %}>待进行</option>
                         <option value="in_progress" {% if task.status == 'in_progress' %}selected{% endif %}>进行中</option>
+                        <option value="waiting" {% if task.status == 'waiting' %}selected{% endif %}>等待中</option>
                         <option value="completed" {% if task.status == 'completed' %}selected{% endif %}>已完成</option>
                     </select>
                 </div>
@@ -154,10 +181,20 @@
             <form action="{{ url_for('task_progress', task_id=task.id) }}" method="post" class="stack-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
-                    <label for="content">记录进展</label>
-                    <textarea name="content" id="content" class="form-control" rows="4" placeholder="今天推进了什么，遇到什么阻塞，下一步是什么" required></textarea>
+                    <label for="entry_type">更新类型</label>
+                    <select name="entry_type" id="entry_type" class="form-control task-entry-type" onchange="updateCheckinContentState(this)">
+                        <option value="progress">有进展</option>
+                        <option value="no_progress">今日无进展</option>
+                        <option value="waiting" {% if task.status == 'waiting' %}selected{% endif %}>等待外部</option>
+                        <option value="resumed">恢复推进</option>
+                    </select>
                 </div>
-                <button type="submit" class="btn btn-primary btn-sm">记录进展</button>
+                <div class="form-group task-checkin-composer">
+                    <label for="content">更新内容</label>
+                    <textarea name="content" id="content" class="form-control task-checkin-content" rows="4" placeholder="今天推进了什么，遇到什么阻塞，下一步是什么" required></textarea>
+                    <p class="form-hint">“有进展”和“等待外部”需要填写内容；“今日无进展”和“恢复推进”可选。</p>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">提交更新</button>
             </form>
             {% endif %}
         </section>
@@ -178,4 +215,30 @@
     </aside>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateCheckinContentState(select) {
+    var form = select.form;
+    if (!form) return;
+    var content = form.querySelector('.task-checkin-content');
+    if (!content) return;
+    var needsContent = select.value === 'progress' || select.value === 'waiting';
+    content.required = needsContent;
+    if (select.value === 'progress') {
+        content.placeholder = '写明今天推进了什么、产出了什么';
+    } else if (select.value === 'waiting') {
+        content.placeholder = '写明等待对象、原因和预计恢复条件';
+    } else if (select.value === 'no_progress') {
+        content.placeholder = '可选：说明今天无进展的原因';
+    } else {
+        content.placeholder = '可选：说明已恢复推进的上下文';
+    }
+}
+
+document.querySelectorAll('.task-entry-type').forEach(function(select) {
+    updateCheckinContentState(select);
+});
+</script>
 {% endblock %}

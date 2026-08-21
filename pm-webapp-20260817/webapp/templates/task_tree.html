@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+{% block title %}任务图谱{% endblock %}
+{% block content %}
+
+{% macro format_date(value) %}{{ value.strftime('%Y-%m-%d') if value else '未指定' }}{% endmacro %}
+
+{% macro goal_status_badge(goal) %}
+<span class="badge graph-status graph-status-{{ goal.status }}">
+    {% if goal.status == 'merged' %}已闭环{% elif goal.status == 'merge_requested' %}待验收{% else %}进行中{% endif %}
+</span>
+{% endmacro %}
+
+{% macro risk_badges(reasons) %}
+    {% if 'overdue' in reasons %}<span class="badge badge-overdue">逾期</span>{% endif %}
+    {% if 'waiting' in reasons %}<span class="badge badge-medium">等待</span>{% endif %}
+    {% if 'stale' in reasons %}<span class="badge badge-closed">停滞</span>{% endif %}
+    {% if 'unassigned' in reasons %}<span class="badge badge-pending">未分配</span>{% endif %}
+{% endmacro %}
+
+{% macro branch_actions(branch) %}
+{% set goal = branch.goal %}
+<div class="graph-action-stack" aria-label="{{ goal.title }} 分支操作">
+    {% if branch.can_request_merge %}
+    <details class="graph-action-panel">
+        <summary class="btn btn-outline btn-sm">申请闭环</summary>
+        <form action="{{ url_for('goal_merge_request', goal_id=goal.id) }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="graph-result-{{ goal.id }}">实际结果 *</label>
+            <textarea id="graph-result-{{ goal.id }}" name="actual_result" class="form-control" rows="3" required>{{ goal.actual_result or '' }}</textarea>
+            <label for="graph-result-type-{{ goal.id }}">结果类型</label>
+            <select id="graph-result-type-{{ goal.id }}" name="result_type" class="form-control">
+                <option value="achieved">达成</option>
+                <option value="answered">已回答</option>
+                <option value="cancelled">取消</option>
+                <option value="transferred">转交</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">提交闭环申请</button>
+        </form>
+    </details>
+    {% endif %}
+    {% if branch.can_review %}
+    <details class="graph-action-panel">
+        <summary class="btn btn-outline btn-sm">验收闭环</summary>
+        <form action="{{ url_for('goal_merge_review', goal_id=goal.id) }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="graph-review-{{ goal.id }}">验收备注</label>
+            <textarea id="graph-review-{{ goal.id }}" name="merge_note" class="form-control" rows="3"></textarea>
+            <div class="graph-action-row">
+                <button type="submit" name="decision" value="approve" class="btn btn-success btn-sm">通过并合并</button>
+                <button type="submit" name="decision" value="reject" class="btn btn-outline btn-sm">驳回</button>
+            </div>
+        </form>
+    </details>
+    {% endif %}
+    {% if branch.can_reopen %}
+    <details class="graph-action-panel">
+        <summary class="btn btn-outline btn-sm">重新打开</summary>
+        <form action="{{ url_for('goal_reopen', goal_id=goal.id) }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="graph-reopen-{{ goal.id }}">重新打开原因</label>
+            <textarea id="graph-reopen-{{ goal.id }}" name="reason" class="form-control" rows="2" required></textarea>
+            <button type="submit" class="btn btn-warning btn-sm">重新打开分支</button>
+        </form>
+    </details>
+    {% endif %}
+</div>
+{% endmacro %}
+
+<header class="page-header graph-page-header">
+    <div>
+        <p class="page-kicker">Git-style delivery map</p>
+        <h1>任务图谱</h1>
+        <p class="page-subtitle">项目是主线，目标从主线分叉，任务再从目标开出子分支；完成任务回合并到目标，验收目标回合并到项目主线。</p>
+    </div>
+    <nav class="graph-scope-switch" aria-label="图谱范围">
+        <a href="{{ url_for('task_tree', scope='mine', project_id=filters.project_id, status=filters.status, q=filters.q) }}"
+           class="graph-scope-option {% if scope == 'mine' %}active{% endif %}"
+           {% if scope == 'mine' %}aria-current="page"{% endif %}>我的图谱</a>
+        {% if can_overview %}
+        <a href="{{ url_for('task_tree', scope='overview', project_id=filters.project_id, status=filters.status, q=filters.q) }}"
+           class="graph-scope-option {% if scope == 'overview' %}active{% endif %}"
+           {% if scope == 'overview' %}aria-current="page"{% endif %}>总体图谱</a>
+        {% endif %}
+    </nav>
+</header>
+
+<section class="graph-toolbar card" aria-label="任务图谱筛选">
+    <form method="get" class="graph-filter-form">
+        <input type="hidden" name="scope" value="{{ scope }}">
+        <div class="toolbar-field">
+            <label for="graph-project-filter">项目</label>
+            <select id="graph-project-filter" name="project_id" class="form-control">
+                <option value="">全部可见项目</option>
+                {% for project in project_options %}
+                <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="toolbar-field">
+            <label for="graph-status-filter">分支状态</label>
+            <select id="graph-status-filter" name="status" class="form-control">
+                <option value="all" {% if filters.status == 'all' %}selected{% endif %}>全部</option>
+                <option value="active" {% if filters.status == 'active' %}selected{% endif %}>进行中</option>
+                <option value="ready" {% if filters.status == 'ready' %}selected{% endif %}>可申请闭环</option>
+                <option value="merge_requested" {% if filters.status == 'merge_requested' %}selected{% endif %}>待验收</option>
+                <option value="merged" {% if filters.status == 'merged' %}selected{% endif %}>已闭环</option>
+                <option value="risk" {% if filters.status == 'risk' %}selected{% endif %}>风险</option>
+            </select>
+        </div>
+        <div class="toolbar-field graph-search-field">
+            <label for="graph-query">搜索</label>
+            <input id="graph-query" type="search" name="q" class="form-control" value="{{ filters.q }}" placeholder="项目、分支或任务">
+        </div>
+        <button type="submit" class="btn btn-primary">应用</button>
+        <a href="{{ url_for('task_tree', scope=scope) }}" class="btn btn-outline">重置</a>
+    </form>
+</section>
+
+<section class="metric-strip graph-summary" aria-label="可见图谱摘要">
+    <div class="metric-compact"><strong>{{ summary.project_count }}</strong><span>项目主线</span></div>
+    <div class="metric-compact"><strong>{{ summary.branch_count }}</strong><span>目标分支</span></div>
+    <div class="metric-compact"><strong>{{ summary.task_count }}</strong><span>任务子分支</span></div>
+    <div class="metric-compact"><strong>{{ summary.review_count }}</strong><span>待验收</span></div>
+    <div class="metric-compact"><strong>{{ summary.merged_count }}</strong><span>已闭环</span></div>
+    <div class="metric-compact"><strong>{{ summary.risk_count }}</strong><span>风险节点</span></div>
+</section>
+
+<div class="graph-legend" aria-label="图谱图例">
+    <span><i class="graph-legend-line"></i>项目主线</span>
+    <span><i class="graph-legend-node graph-legend-circle"></i>任务提交</span>
+    <span><i class="graph-legend-node graph-legend-square"></i>等待</span>
+    <span><i class="graph-legend-node graph-legend-diamond"></i>逾期 / 待验收</span>
+    <span><i class="graph-legend-curve"></i>任务子分支 / 回合并</span>
+    <span><i class="graph-legend-halo"></i>与我相关</span>
+</div>
+
+<main class="graph-project-list">
+{% for item in graph_projects %}
+{% set project = item.project %}
+{% set graph = item.graph %}
+<article class="git-graph-project graph-scope-{{ scope }}" data-graph-project aria-labelledby="graph-project-title-{{ project.id }}">
+    <header class="git-graph-project-header">
+        <div>
+            <div class="graph-ref-row">
+                <span class="graph-ref graph-ref-main">main</span>
+                <span class="graph-ref">{{ '总体' if scope == 'overview' else '我的' }}</span>
+            </div>
+            <h2 id="graph-project-title-{{ project.id }}"><a href="{{ url_for('project_view', project_id=project.id) }}">{{ project.name }}</a></h2>
+            <p>{{ project.description or project.deliverable or '暂无项目说明。' }}</p>
+        </div>
+        <div class="git-graph-project-meta">
+            <span>负责人：{{ project.lead.display_name if project.lead else '未指定' }}</span>
+            <span>可见分支：{{ item.branches|length }}</span>
+            <span>可见任务：{{ graph.nodes|selectattr('kind', 'equalto', 'task')|list|length }}</span>
+        </div>
+    </header>
+
+    <div class="git-graph-layout">
+        <div class="git-graph-viewport" tabindex="0" aria-label="{{ project.name }} 图谱，可横向滚动">
+            <svg class="git-graph" viewBox="0 0 {{ graph.width }} {{ graph.height }}"
+                 width="{{ graph.width }}" height="{{ graph.height }}"
+                 role="img" aria-labelledby="graph-title-{{ project.id }} graph-desc-{{ project.id }}"
+                 preserveAspectRatio="xMinYMin meet">
+                <title id="graph-title-{{ project.id }}">{{ project.name }} Git 风格任务图谱</title>
+                <desc id="graph-desc-{{ project.id }}">项目主线从上向下延伸，目标分支从主线分叉，任务再从目标分支开出子分支；完成任务通过曲线合并回目标，验收通过的目标通过曲线合并回项目主线。</desc>
+                <g class="graph-edges" aria-hidden="true">
+                    {% for edge in graph.edges %}
+                    <path d="{{ edge.path }}" class="graph-edge {{ edge.lane_class }} graph-edge-{{ edge.kind }}"
+                          {% if edge.lane_style %}style="{{ edge.lane_style }}"{% endif %}></path>
+                    {% endfor %}
+                </g>
+                <g class="graph-nodes">
+                    {% for node in graph.nodes %}
+                    <g class="graph-node graph-node-{{ node.kind }} graph-state-{{ node.status }} {{ node.lane_class|default('') }} {% if node.is_mine %}is-mine{% endif %} {% if node.risk_reasons %}has-risk{% endif %}"
+                       transform="translate({{ node.x }} {{ node.y }})"
+                       role="button" tabindex="0"
+                       aria-label="{{ node.label }}，{{ node.state_label }}{% if node.is_mine %}，与我相关{% endif %}{% if 'overdue' in node.risk_reasons %}，已逾期{% endif %}{% if 'waiting' in node.risk_reasons %}，等待中{% endif %}{% if 'stale' in node.risk_reasons %}，已停滞{% endif %}{% if 'unassigned' in node.risk_reasons %}，未分配{% endif %}"
+                       aria-controls="graph-inspector-{{ node.inspector_id }}"
+                       {% if node.lane_style %}style="{{ node.lane_style }}"{% endif %}
+                       data-graph-node data-inspector-target="graph-inspector-{{ node.inspector_id }}">
+                        {% if node.is_mine %}<circle class="graph-my-halo" r="13"></circle>{% endif %}
+                        {% if node.kind == 'project' %}
+                        <circle class="graph-node-shape graph-node-main" r="8"></circle>
+                        {% elif node.kind == 'main_commit' %}
+                        <circle class="graph-node-shape graph-node-main-commit" r="6"></circle>
+                        {% elif node.kind == 'branch_commit' %}
+                        <circle class="graph-node-shape graph-node-branch-commit" r="5"></circle>
+                        {% elif node.kind == 'main_head' %}
+                        <circle class="graph-node-shape graph-node-main-head" r="9"></circle>
+                        <circle class="graph-node-inner graph-node-main-head-inner" r="3"></circle>
+                        {% elif node.kind == 'goal' %}
+                        <rect class="graph-node-shape graph-node-branch-head" x="-7" y="-7" width="14" height="14" rx="3"></rect>
+                        {% elif node.kind == 'task_join' and node.status == 'completed' %}
+                        <circle class="graph-node-shape graph-node-task-join graph-node-task-join-complete" r="8"></circle>
+                        <circle class="graph-node-inner graph-node-task-join-inner" r="3"></circle>
+                        {% elif node.kind == 'task_join' %}
+                        <circle class="graph-node-shape graph-node-task-join graph-node-task-join-open" r="8"></circle>
+                        <circle class="graph-node-task-join-progress" r="2.5"></circle>
+                        {% elif node.kind == 'merge' and node.status == 'merge_requested' %}
+                        <rect class="graph-node-shape graph-node-review" x="-7" y="-7" width="14" height="14" transform="rotate(45)"></rect>
+                        {% elif node.kind == 'merge' and node.status in ('merged', 'completed') %}
+                        <circle class="graph-node-shape graph-node-merged" r="8"></circle>
+                        <circle class="graph-node-inner" r="3"></circle>
+                        {% elif 'overdue' in node.risk_reasons %}
+                        <rect class="graph-node-shape graph-node-overdue" x="-7" y="-7" width="14" height="14" transform="rotate(45)"></rect>
+                        {% elif 'waiting' in node.risk_reasons %}
+                        <rect class="graph-node-shape graph-node-waiting" x="-7" y="-7" width="14" height="14" rx="2"></rect>
+                        {% else %}
+                        <circle class="graph-node-shape" r="7"></circle>
+                        {% endif %}
+                        {% if 'unassigned' in node.risk_reasons %}<circle class="graph-node-unassigned" r="11"></circle>{% endif %}
+                        {% if not node.compact %}
+                        <text class="graph-node-label" x="18" y="-2">{{ node.label[:30] }}{% if node.label|length > 30 %}…{% endif %}</text>
+                        <text class="graph-node-state" x="18" y="15">{{ node.state_label }}{% if node.is_mine %} · 我的{% endif %}{% if 'overdue' in node.risk_reasons %} · 逾期{% endif %}{% if 'waiting' in node.risk_reasons %} · 等待{% endif %}{% if 'stale' in node.risk_reasons %} · 停滞{% endif %}{% if 'unassigned' in node.risk_reasons %} · 未分配{% endif %}</text>
+                        {% endif %}
+                    </g>
+                    {% endfor %}
+                </g>
+            </svg>
+        </div>
+
+        <aside class="graph-inspector" aria-live="polite" aria-label="选中节点详情">
+            <article id="graph-inspector-project-{{ project.id }}" class="graph-inspector-panel" data-graph-inspector {% if graph.selected_id != 'project-' ~ project.id %}hidden{% endif %}>
+                <p class="page-kicker">项目主线</p>
+                <h3>{{ project.name }}</h3>
+                <p>{{ project.description or '暂无项目背景。' }}</p>
+                <dl class="graph-facts">
+                    <div><dt>负责人</dt><dd>{{ project.lead.display_name if project.lead else '未指定' }}</dd></div>
+                    <div><dt>开始时间</dt><dd>{{ format_date(project.start_date) }}</dd></div>
+                    <div><dt>范围</dt><dd>{{ '总体图谱' if scope == 'overview' else '我的图谱' }}</dd></div>
+                </dl>
+                <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-primary btn-sm">打开项目</a>
+            </article>
+
+            {% for branch in item.branches %}
+            {% set goal = branch.goal %}
+            <article id="graph-inspector-goal-{{ goal.id }}" class="graph-inspector-panel" data-graph-inspector {% if graph.selected_id != 'goal-' ~ goal.id %}hidden{% endif %}>
+                <div class="graph-inspector-titlebar">
+                    <div><p class="page-kicker">目标分支</p><h3>{{ goal.title }}</h3></div>
+                    {{ goal_status_badge(goal) }}
+                </div>
+                <p>{{ goal.description or goal.deliverable or '暂无分支说明。' }}</p>
+                <div class="graph-badge-row">
+                    {% if branch.is_mine %}<span class="badge graph-mine-badge">我的：{{ branch.relevance|join(' / ') }}</span>{% endif %}
+                    {% if goal.is_overdue() %}<span class="badge badge-overdue">分支逾期</span>{% endif %}
+                    {% if branch.risk_count %}<span class="badge badge-overdue">{{ branch.risk_count }} 个风险节点</span>{% endif %}
+                    {% if branch.can_request_merge %}<span class="badge badge-discussing">可申请闭环</span>{% endif %}
+                </div>
+                <dl class="graph-facts">
+                    <div><dt>负责人</dt><dd>{{ goal.owner.display_name if goal.owner else '未指定' }}</dd></div>
+                    <div><dt>验收人</dt><dd>{{ goal.reviewer.display_name if goal.reviewer else '未指定' }}</dd></div>
+                    <div><dt>截止时间</dt><dd>{{ format_date(goal.due_date) }}</dd></div>
+                    <div><dt>提交节点</dt><dd>{{ branch.tasks|length }}</dd></div>
+                </dl>
+                {% if goal.actual_result %}<div class="graph-result"><strong>实际结果</strong><p>{{ goal.actual_result }}</p></div>{% endif %}
+                {% if goal.merge_note %}<div class="graph-result"><strong>验收备注</strong><p>{{ goal.merge_note }}</p></div>{% endif %}
+                {{ branch_actions(branch) }}
+                <a href="{{ url_for('project_view', project_id=project.id) }}" class="btn btn-outline btn-sm">打开分支上下文</a>
+            </article>
+
+            {% for task in branch.tasks %}
+            {% set reasons = task_risk_reasons(task) %}
+            {% set relevance = task_relevance(current_user, task) %}
+            <article id="graph-inspector-task-{{ task.id }}" class="graph-inspector-panel" data-graph-inspector {% if graph.selected_id != 'task-' ~ task.id %}hidden{% endif %}>
+                <div class="graph-inspector-titlebar">
+                    <div><p class="page-kicker">任务子分支 · {{ goal.title }}</p><h3>{{ task.title }}</h3></div>
+                    <span class="badge badge-{{ 'resolved' if task.status == 'completed' else ('in-progress' if task.status == 'in_progress' else ('medium' if task.status == 'waiting' else 'pending')) }}">{{ task.status_label() }}</span>
+                </div>
+                <div class="graph-badge-row">
+                    {{ risk_badges(reasons) }}
+                    {% if relevance %}<span class="badge graph-mine-badge">我的：{{ relevance|join(' / ') }}</span>{% endif %}
+                </div>
+                <p>{{ task.description or task.deliverable or '暂无任务说明。' }}</p>
+                <dl class="graph-facts">
+                    <div><dt>负责人</dt><dd>{{ task.assignee.display_name if task.assignee else '未分配' }}</dd></div>
+                    <div><dt>验收人</dt><dd>{{ task.reviewer.display_name if task.reviewer else '未指定' }}</dd></div>
+                    <div><dt>截止时间</dt><dd>{{ format_date(task.due_date) }}</dd></div>
+                    <div><dt>最近更新</dt><dd>{{ task.checkin_at()|localdt_short if task.checkin_at() else '暂无' }}</dd></div>
+                </dl>
+                {% if task.waiting_reason %}<div class="graph-result"><strong>等待原因</strong><p>{{ task.waiting_reason }}</p></div>{% endif %}
+                <a href="{{ url_for('task_view', task_id=task.id) }}" class="btn btn-primary btn-sm">打开任务</a>
+            </article>
+            {% endfor %}
+            {% endfor %}
+
+            {% for task in item.ungrouped_tasks %}
+            {% set reasons = task_risk_reasons(task) %}
+            <article id="graph-inspector-task-{{ task.id }}" class="graph-inspector-panel" data-graph-inspector {% if graph.selected_id != 'task-' ~ task.id %}hidden{% endif %}>
+                <div class="graph-inspector-titlebar">
+                    <div><p class="page-kicker">主线任务</p><h3>{{ task.title }}</h3></div>
+                    <span class="badge badge-{{ 'resolved' if task.status == 'completed' else ('in-progress' if task.status == 'in_progress' else ('medium' if task.status == 'waiting' else 'pending')) }}">{{ task.status_label() }}</span>
+                </div>
+                <div class="graph-badge-row">{{ risk_badges(reasons) }}</div>
+                <p>{{ task.description or task.deliverable or '暂无任务说明。' }}</p>
+                <a href="{{ url_for('task_view', task_id=task.id) }}" class="btn btn-primary btn-sm">打开任务</a>
+            </article>
+            {% endfor %}
+        </aside>
+    </div>
+
+    <details class="graph-accessible-fallback">
+        <summary>展开文字版分支清单</summary>
+        <div class="graph-fallback-list">
+            {% for branch in item.branches %}
+            <section>
+                <h3>{{ branch.goal.title }} · {{ branch.goal.status_label() }}</h3>
+                <p>负责人：{{ branch.goal.owner.display_name if branch.goal.owner else '未指定' }}；验收人：{{ branch.goal.reviewer.display_name if branch.goal.reviewer else '未指定' }}</p>
+                <ul>
+                    {% for task in branch.tasks %}
+                    <li><a href="{{ url_for('task_view', task_id=task.id) }}">{{ task.title }}</a> — {{ task.status_label() }}{% if task.is_overdue() %}，逾期{% endif %}{% if task.status == 'waiting' %}，等待{% endif %}</li>
+                    {% else %}<li>暂无任务</li>{% endfor %}
+                </ul>
+            </section>
+            {% endfor %}
+        </div>
+    </details>
+</article>
+{% else %}
+<div class="empty-state graph-empty-state">
+    <p>当前范围没有可见图谱</p>
+    <p>可以调整状态筛选，或等待被分配到项目、分支或任务。</p>
+</div>
+{% endfor %}
+</main>
+
+<script>
+(function () {
+    function selectNode(node) {
+        var project = node.closest('[data-graph-project]');
+        var targetId = node.getAttribute('data-inspector-target');
+        if (!project || !targetId) return;
+        project.querySelectorAll('[data-graph-node]').forEach(function (item) {
+            item.classList.toggle('is-selected', item === node);
+            item.setAttribute('aria-pressed', item === node ? 'true' : 'false');
+        });
+        project.querySelectorAll('[data-graph-inspector]').forEach(function (panel) {
+            panel.hidden = panel.id !== targetId;
+        });
+    }
+
+    document.querySelectorAll('[data-graph-project]').forEach(function (project) {
+        var visible = project.querySelector('[data-graph-inspector]:not([hidden])');
+        var initial = visible && project.querySelector('[data-inspector-target="' + visible.id + '"]');
+        if (initial) selectNode(initial);
+    });
+
+    document.addEventListener('click', function (event) {
+        var node = event.target.closest('[data-graph-node]');
+        if (node) selectNode(node);
+    });
+
+    document.addEventListener('keydown', function (event) {
+        var node = event.target.closest('[data-graph-node]');
+        if (!node) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectNode(node);
+        }
+    });
+})();
+</script>
+
+{% endblock %}

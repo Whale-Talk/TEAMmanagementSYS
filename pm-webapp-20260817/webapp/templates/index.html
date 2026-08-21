@@ -25,8 +25,8 @@
 {% if projects %}
 <div class="project-grid project-summary-grid">
     {% for p in projects %}
-    {% set stats = p.task_stats() %}
-    {% set completed_count = stats.total - stats.open %}
+    {% set stats = project_stats[p.id] %}
+    {% set completed_count = stats.completed %}
     <article class="card project-card project-summary-card {% if p.status == 'archived' %}project-card-archived{% endif %}" data-name="{{ p.name|lower }}" data-href="{{ url_for('project_view', project_id=p.id) }}" role="link" tabindex="0" aria-label="打开项目 {{ p.name }}">
         <div class="card-header project-card-titlebar">
             <div>
@@ -65,7 +65,7 @@
                 <span>已完成</span>
             </div>
             <div>
-                <strong>{{ p.progress_pct() }}%</strong>
+                <strong>{{ stats.progress_pct }}%</strong>
                 <span>进度</span>
             </div>
         </div>
@@ -84,10 +84,12 @@
 
         <div class="project-card-actions">
             {% if p.status == 'archived' %}
+            {% if current_user.is_admin() %}
             <form action="{{ url_for('project_restore', project_id=p.id) }}" method="post" data-card-action data-confirm="确定恢复这个归档项目为进行中？">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-outline btn-xs">恢复</button>
             </form>
+            {% endif %}
             {% else %}
             <form action="{{ url_for('project_toggle_pin', project_id=p.id) }}" method="post" data-card-action>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -97,6 +99,7 @@
                 <button type="submit" class="btn btn-outline btn-xs" title="置顶关注" aria-label="置顶关注">置顶</button>
                 {% endif %}
             </form>
+            {% if current_user.can_manage_project(p) %}
             <form action="{{ url_for('project_priority_move', project_id=p.id, direction='up') }}" method="post" data-card-action>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-outline btn-xs" title="提高重要度" aria-label="提高项目重要度">上移</button>
@@ -105,6 +108,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-outline btn-xs" title="降低重要度" aria-label="降低项目重要度">下移</button>
             </form>
+            {% endif %}
             {% endif %}
         </div>
     </article>

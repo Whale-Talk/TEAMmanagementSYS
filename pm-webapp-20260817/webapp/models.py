@@ -1,8 +1,8 @@
-"""数据模型定义 - 简化版（项目 → 任务，目标降级为标签）"""
+"""数据模型定义：项目主线 -> 目标分支 -> 任务节点。"""
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 db = SQLAlchemy()
 
@@ -16,6 +16,12 @@ project_pins = db.Table('project_pins',
 # 任务-成员多对多
 task_members = db.Table('task_members',
     db.Column('task_id', db.Integer, db.ForeignKey('task.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
+
+# 目标分支-成员多对多
+goal_members = db.Table('goal_members',
+    db.Column('goal_id', db.Integer, db.ForeignKey('goal.id'), primary_key=True),
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
 )
 
@@ -89,18 +95,101 @@ class User(UserMixin, db.Model):
         return False
 
     def can_manage_project(self, project):
-        """是否有项目管理权（管理员 / 该项目项目人员）"""
+        """是否有项目管理权（管理员 / 项目负责人 / 该项目项目人员）"""
         if self.role == 'admin':
+            return True
+        if project and project.lead_id == self.id:
             return True
         if self.role == 'project_member':
             return project in self.member_projects
         return False
 
-    def can_edit_task(self, task):
-        """是否有任务编辑权（管理员/项目人员/任务负责人）"""
+    def is_directly_related_to_task(self, task):
+        """不把管理员身份当作业务关系，供“我的”高亮和读取授权复用。"""
+        if not task:
+            return False
+        if self.id in (
+            task.assignee_id,
+            task.submitter_id,
+            task.reviewer_id,
+        ):
+            return True
+        return task.members.filter_by(id=self.id).count() > 0
+
+    def is_directly_related_to_goal(self, goal):
+        if not goal:
+            return False
+        if self.id in (goal.owner_id, goal.reviewer_id):
+            return True
+        if goal.members.filter_by(id=self.id).count() > 0:
+            return True
+        return any(self.is_directly_related_to_task(task) for task in goal.tasks)
+
+    def is_directly_related_to_project(self, project):
+        if not project:
+            return False
+        if project.lead_id == self.id or project in self.member_projects:
+            return True
+        if any(self.is_directly_related_to_goal(goal) for goal in project.goals):
+            return True
+        return any(
+            self.is_directly_related_to_task(task)
+            for task in project.tasks
+            if task.goal_id is None
+        )
+
+    def can_view_project(self, project):
+        """项目读取权，与编辑/管理权严格分离。"""
+        if not project:
+            return False
+        return self.is_admin() or self.is_directly_related_to_project(project)
+
+    def can_view_goal(self, goal):
+        if not goal:
+            return False
+        if self.can_manage_project(goal.project):
+            return True
+        return self.is_directly_related_to_goal(goal)
+
+    def can_view_task(self, task):
+        if not task:
+            return False
         if self.can_manage_project(task.project):
             return True
+        if self.is_directly_related_to_task(task):
+            return True
+        return bool(task.goal and self.is_directly_related_to_goal(task.goal))
+
+    def can_edit_task(self, task):
+        """是否有任务编辑权（项目管理者 / 目标负责人 / 任务负责人）"""
+        if self.can_manage_project(task.project):
+            return True
+        if task.goal and task.goal.owner_id == self.id:
+            return True
         return task.assignee_id == self.id
+
+    def can_manage_goal(self, goal):
+        if not goal:
+            return False
+        return self.can_manage_project(goal.project) or goal.owner_id == self.id
+
+    def can_review_goal(self, goal):
+        if not goal:
+            return False
+        if self.can_manage_project(goal.project):
+            return True
+        if goal.reviewer_id == self.id:
+            return True
+        return False
+
+    def can_log_task_progress(self, task):
+        if self.can_manage_project(task.project):
+            return True
+        if task.assignee_id == self.id:
+            return True
+        if task.goal and task.goal.owner_id == self.id:
+            return True
+        return task.members.filter_by(id=self.id).count() > 0
 
 
 class Project(db.Model):
@@ -154,8 +243,11 @@ class Project(db.Model):
 
 
 class Goal(db.Model):
-    """目标 —— 降级为任务的分组标签，不再是独立管理实体"""
+    """目标分支：从项目主线分出的可申请闭环的生命周期实体。"""
     __tablename__ = 'goal'
+
+    VALID_STATUSES = ('active', 'merge_requested', 'merged')
+    VALID_RESULT_TYPES = ('achieved', 'answered', 'cancelled', 'transferred')
 
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
@@ -163,10 +255,77 @@ class Goal(db.Model):
     description = db.Column(db.Text)  # 为什么做（分组目的）
     deliverable = db.Column(db.Text)  # 预期产出
     order = db.Column(db.Integer, default=0)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    reviewer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    status = db.Column(db.String(20), default='active')  # active / merge_requested / merged
+    start_date = db.Column(db.Date, nullable=True)
+    due_date = db.Column(db.Date, nullable=True)
+    actual_result = db.Column(db.Text, nullable=True)
+    result_type = db.Column(db.String(20), nullable=True)
+    merge_requested_at = db.Column(db.DateTime, nullable=True)
+    merge_requested_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    merged_at = db.Column(db.DateTime, nullable=True)
+    merged_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    merge_note = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    owner = db.relationship('User', foreign_keys=[owner_id], backref='owned_goals')
+    reviewer = db.relationship('User', foreign_keys=[reviewer_id], backref='review_goals')
+    merge_requested_by = db.relationship('User', foreign_keys=[merge_requested_by_id])
+    merged_by = db.relationship('User', foreign_keys=[merged_by_id])
+    members = db.relationship('User', secondary=goal_members, backref='member_goals', lazy='dynamic')
     tasks = db.relationship('Task', backref='goal', lazy=True,
                             foreign_keys='Task.goal_id')
+
+    def status_label(self):
+        return {
+            'active': '进行中',
+            'merge_requested': '待验收',
+            'merged': '已闭环',
+        }.get(self.status, self.status)
+
+    def result_type_label(self):
+        return {
+            'achieved': '达成',
+            'answered': '已回答',
+            'cancelled': '取消',
+            'transferred': '转交',
+        }.get(self.result_type, self.result_type or '')
+
+    def task_stats(self):
+        total = len(self.tasks)
+        completed = sum(1 for t in self.tasks if t.status == 'completed')
+        open_tasks = [t for t in self.tasks if t.is_open()]
+        return {
+            'total': total,
+            'completed': completed,
+            'open': len(open_tasks),
+            'waiting': sum(1 for t in self.tasks if t.status == 'waiting'),
+            'overdue': sum(1 for t in open_tasks if t.is_overdue()),
+            'unassigned': sum(1 for t in open_tasks if not t.assignee_id),
+        }
+
+    def all_tasks_completed(self):
+        return bool(self.tasks) and all(t.status == 'completed' for t in self.tasks)
+
+    def ready_for_merge(self):
+        return (
+            self.status == 'active'
+            and self.all_tasks_completed()
+        )
+
+    def can_request_merge(self, user):
+        return user.can_manage_goal(self) and self.ready_for_merge()
+
+    def can_review_merge(self, user):
+        if self.status != 'merge_requested':
+            return False
+        if not user.can_review_goal(self):
+            return False
+        return self.merge_requested_by_id != user.id
+
+    def is_overdue(self):
+        return bool(self.due_date and self.status != 'merged' and self.due_date < date.today())
 
 
 class Task(db.Model):
@@ -179,7 +338,9 @@ class Task(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     order = db.Column(db.Integer, default=0)
-    status = db.Column(db.String(20), default='pending')  # pending / in_progress / completed
+    VALID_STATUSES = ('pending', 'in_progress', 'waiting', 'completed')
+
+    status = db.Column(db.String(20), default='pending')  # pending / in_progress / waiting / completed
     assignee_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     submitter_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     reviewer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
@@ -190,14 +351,16 @@ class Task(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
     last_progress_at = db.Column(db.DateTime, nullable=True)  # 最后一次记录进展的时间
+    last_checkin_at = db.Column(db.DateTime, nullable=True)  # 最后一次打卡/检查时间
+    waiting_reason = db.Column(db.Text, nullable=True)
+    waiting_until = db.Column(db.Date, nullable=True)
 
     members = db.relationship('User', secondary=task_members, backref='member_tasks', lazy='dynamic')
     progress_logs = db.relationship('ProgressLog', backref='task', lazy=True,
                                     order_by='ProgressLog.created_at.desc()')
 
     def is_overdue(self):
-        if self.due_date and self.status != 'completed':
-            from datetime import date
+        if self.due_date and self.is_open():
             return self.due_date < date.today()
         return False
 
@@ -211,9 +374,23 @@ class Task(db.Model):
         labels = {
             'pending': '待进行',
             'in_progress': '进行中',
+            'waiting': '等待中',
             'completed': '已完成',
         }
         return labels.get(self.status, self.status)
+
+    def is_open(self):
+        return self.status != 'completed'
+
+    def checkin_at(self):
+        return self.last_checkin_at or self.last_progress_at
+
+    def is_stale(self, days=3):
+        if not self.is_open():
+            return False
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        last = self.checkin_at()
+        return last is None or last < cutoff
 
 
 class ActionLog(db.Model):
@@ -235,9 +412,13 @@ class ProgressLog(db.Model):
     """任务进展记录：成员显式打卡，记录推进内容"""
     __tablename__ = 'progress_log'
 
+    VALID_ENTRY_TYPES = ('progress', 'no_progress', 'waiting', 'resumed')
+
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('task.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    entry_type = db.Column(db.String(20), default='progress')
+    checkin_date = db.Column(db.Date, default=date.today)
     content = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
